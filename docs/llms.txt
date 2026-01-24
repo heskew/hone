@@ -1,0 +1,34 @@
+# Hone
+
+> Personal finance software you actually own.
+
+Hone is a self-hosted tool that finds wasteful spending in your bank transactions: zombie subscriptions, price increases, and duplicate services.
+
+## Overview
+
+- **Privacy-first**: CSV import only, no bank credentials, encrypted database
+- **Self-hosted**: Runs on your machine or homelab
+- **AI-optional**: Local Ollama integration for smarter classification
+- **Open source**: MIT license
+
+## What It Does
+
+1. Import transactions from your bank (CSV export)
+2. Detect subscriptions automatically
+3. Find waste:
+   - Zombie subscriptions (forgotten recurring charges)
+   - Price increases (services that raised prices)
+   - Duplicate services (multiple streaming apps, etc.)
+4. Track spending with reports and tags
+
+## Tech Stack
+
+- Backend: Rust (Axum), SQLite with SQLCipher encryption
+- Frontend: React, Tailwind CSS
+- AI: Ollama (optional, runs locally)
+
+## Links
+
+- Source: https://github.com/heskew/hone
+- Docs: https://hone.fyi
+- Site: https://hone.money

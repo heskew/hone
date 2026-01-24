@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} - Hone Docs</title>
+  <meta name="description" content="{{ description | default('Documentation for Hone - personal finance software you actually own') }}">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/theme/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="sidebar-header">
+        <a href="/" class="logo">$HONE</a>
+      </div>
+      <div class="sidebar-nav">
+        <ul>
+          <li><a href="/"{% if page.url == "/" %} class="active"{% endif %}>Home</a></li>
+          <li><a href="/status/"{% if page.url == "/status/" %} class="active"{% endif %}>Status</a></li>
+          <li><a href="/roadmap/"{% if page.url == "/roadmap/" %} class="active"{% endif %}>Roadmap</a></li>
+        </ul>
+        <div class="nav-section">Guides</div>
+        <ul>
+          <li><a href="/deployment/"{% if page.url == "/deployment/" %} class="active"{% endif %}>Deployment</a></li>
+          <li><a href="/ollama/"{% if page.url == "/ollama/" %} class="active"{% endif %}>Ollama Setup</a></li>
+          <li><a href="/backup/"{% if page.url == "/backup/" %} class="active"{% endif %}>Backup</a></li>
+          <li><a href="/mcp/"{% if page.url == "/mcp/" %} class="active"{% endif %}>MCP Server</a></li>
+        </ul>
+        <div class="nav-section">Design</div>
+        <ul>
+          <li><a href="/design/"{% if page.url == "/design/" %} class="active"{% endif %}>Overview</a></li>
+          <li><a href="/design/architecture/"{% if page.url == "/design/architecture/" %} class="active"{% endif %}>Architecture</a></li>
+          <li><a href="/design/model-router/"{% if page.url == "/design/model-router/" %} class="active"{% endif %}>Model Router</a></li>
+          <li><a href="/design/explore-mode/"{% if page.url == "/design/explore-mode/" %} class="active"{% endif %}>Explore Mode</a></li>
+          <li><a href="/design/insight-engine/"{% if page.url == "/design/insight-engine/" %} class="active"{% endif %}>Insight Engine</a></li>
+          <li><a href="/design/receipts/"{% if page.url == "/design/receipts/" %} class="active"{% endif %}>Receipts</a></li>
+        </ul>
+        <div class="nav-section">Links</div>
+        <ul>
+          <li><a href="https://hone.money">hone.money</a></li>
+          <li><a href="https://github.com/heskew/hone">GitHub</a></li>
+        </ul>
+      </div>
+    </nav>
+    <main class="content">
+      <article>
+        {% if title %}
+        <h1>{{ title }}</h1>
+        {% endif %}
+        {% if date %}
+        <div class="meta">Last updated: {{ date | formatDate }}</div>
+        {% endif %}
+        {{ content | safe }}
+      </article>
+    </main>
+  </div>
+</body>
+</html>

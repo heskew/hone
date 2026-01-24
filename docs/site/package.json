@@ -1,0 +1,16 @@
+{
+  "name": "hone-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "eleventy",
+    "serve": "eleventy --serve",
+    "clean": "rm -rf _site"
+  },
+  "devDependencies": {
+    "@11ty/eleventy": "3.1.2",
+    "@11ty/eleventy-plugin-syntaxhighlight": "5.0.2",
+    "markdown-it-anchor": "9.2.0"
+  }
+}

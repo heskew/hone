@@ -15,6 +15,10 @@
 # UI
 ui/node_modules/
 ui/dist/
+
+# Docs
+docs/site/node_modules/
+docs/site/_site/
 ui/.vite/
 ui/test-results/
 ui/playwright-report/
@@ -41,7 +45,3 @@ logs/
 # Backups
 *.bak
 backups/
-
-# Private docs (not yet public)
-docs/
-CLAUDE.md

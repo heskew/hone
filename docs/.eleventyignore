@@ -1,0 +1,12 @@
+# Uppercase docs are internal reference only
+FEATURES.md
+DETECTION.md
+SPLITS_DESIGN.md
+
+# Site build artifacts
+site/
+_site/
+
+# Other ignores
+node_modules/
+README.md

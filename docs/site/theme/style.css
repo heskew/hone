@@ -1,0 +1,353 @@
+/* Hone Docs - matches hone.money */
+
+:root {
+  --bg: #0a0a0c;
+  --bg-secondary: #0d0d10;
+  --bg-hover: #1a1a1f;
+  --text: #e0e0e0;
+  --text-dim: #707070;
+  --accent: #4ade80;
+  --accent-dim: #166534;
+  --warn: #fbbf24;
+  --code-bg: rgba(13, 13, 16, 0.8);
+  --border: #2a2a2f;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.8;
+  min-height: 100vh;
+}
+
+/* CRT scanline effect - subtle */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.03),
+    rgba(0, 0, 0, 0.03) 1px,
+    transparent 1px,
+    transparent 2px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* Layout */
+.layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar */
+.sidebar {
+  width: 260px;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  padding: 2rem 1.5rem;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  overflow-y: auto;
+}
+
+.sidebar-header {
+  margin-bottom: 1.5rem;
+}
+
+.logo {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1rem;
+  color: var(--accent);
+  text-decoration: none;
+  display: block;
+}
+
+.sidebar-nav ul {
+  list-style: none;
+  margin-bottom: 1rem;
+}
+
+.sidebar-nav li {
+  margin-bottom: 0.25rem;
+}
+
+.sidebar-nav a {
+  color: var(--text-dim);
+  text-decoration: none;
+  font-size: 13px;
+  display: block;
+  padding: 0.25rem 0;
+  transition: color 0.15s;
+}
+
+.sidebar-nav a:hover,
+.sidebar-nav a.active {
+  color: var(--accent);
+}
+
+.nav-section {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--warn);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Content */
+.content {
+  flex: 1;
+  margin-left: 260px;
+  padding: 2rem 4rem;
+  max-width: 900px;
+}
+
+article {
+  max-width: 700px;
+}
+
+/* Typography */
+h1 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 1.2rem;
+  color: var(--accent);
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0.75rem;
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+h2 {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 0.65rem;
+  color: var(--warn);
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  line-height: 1.8;
+}
+
+h2:first-of-type {
+  margin-top: 2rem;
+  border-top: none;
+  padding-top: 0;
+}
+
+h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+}
+
+h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-dim);
+  margin-top: 1.5rem;
+  margin-bottom: 0.5rem;
+}
+
+p {
+  margin-bottom: 1rem;
+}
+
+.meta {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-bottom: 2rem;
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--warn);
+}
+
+/* Header anchor links - inherit heading color */
+h2 .header-anchor,
+h3 .header-anchor,
+h4 .header-anchor {
+  color: inherit;
+  text-decoration: none;
+}
+
+h2 .header-anchor:hover,
+h3 .header-anchor:hover,
+h4 .header-anchor:hover {
+  color: inherit;
+}
+
+/* Lists */
+ul, ol {
+  margin-bottom: 1rem;
+  padding-left: 1.5rem;
+}
+
+ul {
+  list-style: none;
+}
+
+ul li {
+  position: relative;
+  margin-bottom: 0.5rem;
+}
+
+ul li::before {
+  content: '>';
+  color: var(--accent);
+  position: absolute;
+  left: -1.2rem;
+}
+
+ul ul li::before {
+  content: '-';
+  color: var(--text-dim);
+}
+
+ol {
+  list-style-position: outside;
+}
+
+ol li {
+  margin-bottom: 0.5rem;
+}
+
+ol li::marker {
+  color: var(--accent);
+}
+
+/* Code */
+code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  color: var(--warn);
+}
+
+pre {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  overflow-x: auto;
+  margin-bottom: 1.5rem;
+}
+
+pre code {
+  background: transparent;
+  padding: 0;
+  color: var(--text);
+}
+
+/* Blockquotes */
+blockquote {
+  border-left: 3px solid var(--accent-dim);
+  background: var(--bg-secondary);
+  padding: 1rem;
+  margin: 1rem 0;
+  font-style: normal;
+}
+
+blockquote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: 13px;
+}
+
+th {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: var(--warn);
+  text-align: left;
+  padding: 0.75rem;
+  border-bottom: 2px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+td {
+  padding: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+tr:hover {
+  background: var(--bg-hover);
+}
+
+/* Horizontal rule */
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2rem 0;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sidebar {
+    position: relative;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .content {
+    margin-left: 0;
+    padding: 2rem 1.5rem;
+  }
+
+  .layout {
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  body {
+    font-size: 12px;
+  }
+
+  h1 {
+    font-size: 1rem;
+  }
+
+  h2 {
+    font-size: 0.6rem;
+  }
+
+  .content {
+    padding: 1.5rem 1rem;
+  }
+}
