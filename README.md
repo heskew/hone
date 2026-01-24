@@ -1,8 +1,23 @@
-# Hone
+<p align="center">
+  <img src="site/favicon.svg" width="64" height="64" alt="Hone">
+</p>
 
-A self-hosted personal finance tool that helps you sharpen your spending habits.
+<h1 align="center">$HONE</h1>
 
-Import your bank transactions, and Hone will analyze your spending patterns to surface insights and identify opportunities to save money.
+<p align="center">
+  Personal finance software you actually own.<br>
+  <a href="https://hone.money">hone.money</a> · <a href="https://hone.fyi">docs</a>
+</p>
+
+---
+
+I built this for myself. It finds the subscriptions I forgot about, the services that quietly raised prices, the duplicate apps I'm paying for.
+
+It runs on my machine. My bank doesn't know about it. Neither does anyone else.
+
+**No cloud. No subscriptions. No surveillance.**
+
+Use it if you want. Fork it. Or just know that software like this is possible.
 
 ## Current Features
 
