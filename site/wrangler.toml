@@ -1,0 +1,7 @@
+# Cloudflare Pages configuration for hone.money
+name = "hone-money"
+pages_build_output_dir = "."
+
+# No build command needed - static HTML
+# [build]
+# command = ""
