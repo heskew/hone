@@ -1,0 +1,47 @@
+# Rust
+/target/
+
+# Database
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# UI
+ui/node_modules/
+ui/dist/
+ui/.vite/
+ui/test-results/
+ui/playwright-report/
+ui/e2e/screenshots/
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code local settings
+.claude/settings.local.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Backups
+*.bak
+backups/
+
+# Private docs (not yet public)
+docs/
+CLAUDE.md

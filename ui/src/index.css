@@ -1,0 +1,264 @@
+@import "tailwindcss";
+
+/* Enable dark mode based on system preference */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Custom theme configuration for Hone */
+@theme {
+  /* Custom fonts */
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  /* Primary - deep navy for trust/professionalism */
+  --color-hone-50: #f0f4f8;
+  --color-hone-100: #d9e2ec;
+  --color-hone-200: #bcccdc;
+  --color-hone-300: #9fb3c8;
+  --color-hone-400: #829ab1;
+  --color-hone-500: #627d98;
+  --color-hone-600: #486581;
+  --color-hone-700: #334e68;
+  --color-hone-800: #243b53;
+  --color-hone-900: #102a43;
+
+  /* Success - money green */
+  --color-savings-light: #d1fae5;
+  --color-savings: #10b981;
+  --color-savings-dark: #047857;
+
+  /* Warning - attention amber */
+  --color-attention-light: #fef3c7;
+  --color-attention: #f59e0b;
+  --color-attention-dark: #b45309;
+
+  /* Danger - waste red */
+  --color-waste-light: #fee2e2;
+  --color-waste: #ef4444;
+  --color-waste-dark: #b91c1c;
+
+  /* Custom animations */
+  --animate-fade-in: fadeIn 0.3s ease-out;
+  --animate-slide-up: slideUp 0.3s ease-out;
+  --animate-slide-down: slideDown 0.2s ease-out;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+
+  @keyframes slideUp {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes slideDown {
+    0% { opacity: 0; transform: translateY(-10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+}
+
+/* Base styles */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply min-h-screen bg-hone-50 text-hone-900;
+  }
+
+  /* Minimum width on desktop to prevent compressed layouts */
+  @media (min-width: 768px) {
+    body {
+      min-width: 1024px;
+    }
+  }
+
+  /* Dark mode - applied via class on html element */
+  .dark body {
+    @apply bg-hone-900 text-hone-50;
+  }
+
+  /* Nice scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-hone-100;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-hone-300 rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-hone-400;
+  }
+
+  /* Dark mode scrollbar */
+  .dark ::-webkit-scrollbar-track {
+    @apply bg-hone-800;
+  }
+
+  .dark ::-webkit-scrollbar-thumb {
+    @apply bg-hone-600;
+  }
+
+  .dark ::-webkit-scrollbar-thumb:hover {
+    @apply bg-hone-500;
+  }
+
+  /* Select dropdown styling for dark mode (Windows/Chromium browsers) */
+  .dark select {
+    color-scheme: dark;
+  }
+
+  .dark select option {
+    @apply bg-hone-800 text-hone-100;
+  }
+
+  .dark select option:checked {
+    @apply bg-hone-600;
+  }
+
+  .dark select option:hover {
+    @apply bg-hone-700;
+  }
+}
+
+@layer components {
+  /* Card component */
+  .card {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700;
+  }
+
+  .card-header {
+    @apply px-6 py-4 border-b border-hone-100 dark:border-hone-700;
+  }
+
+  .card-body {
+    @apply px-6 py-4;
+  }
+
+  .card-footer {
+    @apply px-6 py-4 border-t border-hone-100 dark:border-hone-700;
+  }
+
+  /* Button base styles - inline for each variant since Tailwind 4 doesn't support @apply on custom classes */
+  .btn {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-hone-800 text-white hover:bg-hone-900 focus:ring-hone-500;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-hone-100 dark:bg-hone-700 text-hone-700 dark:text-hone-200 hover:bg-hone-200 dark:hover:bg-hone-600 focus:ring-hone-300;
+  }
+
+  .btn-success {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-savings text-white hover:bg-savings-dark focus:ring-savings;
+  }
+
+  .btn-danger {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 bg-waste text-white hover:bg-waste-dark focus:ring-waste;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center px-4 py-2 text-sm font-medium rounded-lg transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 text-hone-600 dark:text-hone-400 hover:bg-hone-100 dark:hover:bg-hone-800 focus:ring-hone-300;
+  }
+
+  /* Badge base styles - inline for each variant */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-success {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-savings-light text-savings-dark;
+  }
+
+  .badge-warning {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-attention-light text-attention-dark;
+  }
+
+  .badge-danger {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-waste-light text-waste-dark;
+  }
+
+  .badge-neutral {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-hone-100 dark:bg-hone-700 text-hone-600 dark:text-hone-300;
+  }
+
+  /* Amount display */
+  .amount {
+    @apply font-mono tabular-nums;
+  }
+
+  .amount-positive {
+    @apply font-mono tabular-nums text-savings-dark;
+  }
+
+  .amount-negative {
+    /* Neutral color for expenses - they're the norm, not exceptional */
+    @apply font-mono tabular-nums text-hone-700 dark:text-hone-300;
+  }
+
+  .amount-waste {
+    /* Reserved for actual waste: alerts, price increases, zombie costs */
+    @apply font-mono tabular-nums text-waste-dark;
+  }
+
+  /* Stat card - inline card styles */
+  .stat-card {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-6;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold text-hone-900 dark:text-hone-50 mt-2;
+  }
+
+  .stat-label {
+    @apply text-sm text-hone-500 dark:text-hone-400 uppercase tracking-wide font-medium;
+  }
+
+  /* Alert card - inline card styles with hover highlight */
+  .alert-card {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 animate-fade-in transition-colors;
+  }
+
+  .alert-card-zombie {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 animate-fade-in border-l-4 border-l-attention transition-colors hover:bg-attention/5 dark:hover:bg-attention/10;
+  }
+
+  .alert-card-increase {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 animate-fade-in border-l-4 border-l-waste transition-colors hover:bg-waste/5 dark:hover:bg-waste/10;
+  }
+
+  .alert-card-duplicate {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 animate-fade-in border-l-4 border-l-hone-400 transition-colors hover:bg-hone-50 dark:hover:bg-hone-700;
+  }
+
+  .alert-card-resume {
+    @apply bg-white dark:bg-hone-800 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 animate-fade-in border-l-4 border-l-waste transition-colors hover:bg-waste/5 dark:hover:bg-waste/10;
+  }
+
+  .alert-card-dismissed {
+    @apply bg-hone-50 dark:bg-hone-900 rounded-xl shadow-sm border border-hone-100 dark:border-hone-700 p-4 flex items-center gap-4 opacity-60 transition-colors hover:opacity-80 hover:bg-hone-100 dark:hover:bg-hone-800;
+  }
+}
+
+@layer utilities {
+  /* Smooth transitions for interactive elements */
+  .interactive {
+    @apply transition-all duration-150 ease-out;
+  }
+
+  /* Subtle hover lift effect */
+  .hover-lift {
+    @apply hover:-translate-y-0.5 hover:shadow-md transition-all duration-200;
+  }
+}

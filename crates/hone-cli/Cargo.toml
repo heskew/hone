@@ -1,0 +1,38 @@
+[package]
+name = "hone-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Command-line interface for Hone personal finance tool"
+
+[[bin]]
+name = "hone"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+hone-core = { path = "../hone-core" }    # Core library (db, import, detection)
+hone-server = { path = "../hone-server" } # Web server for 'serve' command
+
+# CLI framework
+clap.workspace = true            # Argument parsing
+
+# Async runtime
+tokio.workspace = true           # Async for server, Ollama calls
+
+# Error handling
+anyhow.workspace = true          # CLI error propagation
+
+# Logging
+tracing.workspace = true         # Structured logging
+tracing-subscriber.workspace = true # Log output formatting
+
+# Data processing
+chrono.workspace = true          # Date handling for reports
+sha2.workspace = true            # Hash verification
+serde_json.workspace = true      # JSON output formatting
+
+[dev-dependencies]
+# Test utilities
+tempfile = "3"                   # Temp databases for tests
+rusqlite.workspace = true        # Direct db access in tests

@@ -1,0 +1,62 @@
+[package]
+name = "hone-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Core library for Hone personal finance tool"
+
+[features]
+default = []
+# Enable test utilities (mock Ollama server for integration tests)
+test-utils = ["axum", "tokio"]
+
+[dependencies]
+# Database layer
+rusqlite.workspace = true        # SQLite with SQLCipher encryption
+r2d2.workspace = true            # Connection pooling
+r2d2_sqlite.workspace = true     # SQLite r2d2 adapter
+argon2.workspace = true          # Key derivation from passphrase
+
+# Serialization
+serde.workspace = true           # JSON/YAML/TOML parsing
+serde_json.workspace = true      # API responses, Ollama comms
+serde_yaml.workspace = true      # Prompt file frontmatter
+toml.workspace = true            # Model router config
+schemars.workspace = true        # JSON Schema for tool params
+
+# Data processing
+chrono.workspace = true          # Date handling
+csv.workspace = true             # Bank CSV import
+regex.workspace = true           # Tag rule patterns
+
+# HTTP client
+reqwest.workspace = true         # Ollama API calls
+
+# Cryptography
+sha2.workspace = true            # Transaction/receipt hashing
+hex.workspace = true             # Hash display
+base64 = "0.22"                  # Receipt image encoding
+
+# Error handling
+thiserror.workspace = true       # Library error types
+anyhow.workspace = true          # Error propagation
+
+# Async
+async-trait = "0.1"              # Async trait support
+
+# Logging
+tracing.workspace = true         # Structured logging
+
+# File system
+flate2.workspace = true          # Backup compression
+tempfile.workspace = true        # Safe file operations
+dirs.workspace = true            # Platform data directories
+
+# Optional: test utilities feature enables mock Ollama server
+axum = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[dev-dependencies]
+# Test framework dependencies
+axum.workspace = true            # Mock Ollama server
+tokio.workspace = true           # Async test runtime

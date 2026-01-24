@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hone - Personal finance software you actually own</title>
+  <meta name="description" content="Self-hosted personal finance tool that finds wasteful spending. No cloud. No subscriptions. No surveillance.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0c;
+      --text: #e0e0e0;
+      --text-dim: #707070;
+      --accent: #4ade80;
+      --accent-dim: #166534;
+      --warn: #fbbf24;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Press Start 2P', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 2;
+      font-size: 12px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanline effect */
+    body::before {
+      content: '';
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        rgba(0, 0, 0, 0.15),
+        rgba(0, 0, 0, 0.15) 1px,
+        transparent 1px,
+        transparent 2px
+      );
+      pointer-events: none;
+      z-index: 1000;
+    }
+
+    .container {
+      max-width: 700px;
+      margin: 0 auto;
+      padding: 4rem 2rem;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 4rem;
+    }
+
+    .logo {
+      font-size: 2.5rem;
+      color: var(--accent);
+      text-shadow:
+        4px 4px 0 var(--accent-dim),
+        -1px -1px 0 #000;
+      margin-bottom: 1rem;
+      letter-spacing: 0.2em;
+    }
+
+    .tagline {
+      color: var(--text-dim);
+      font-size: 10px;
+    }
+
+    .hero {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin: 3rem 0;
+      font-size: 2rem;
+    }
+
+    .sprite {
+      animation: bounce 1s ease-in-out infinite;
+    }
+
+    .sprite:nth-child(2) { animation-delay: 0.15s; }
+    .sprite:nth-child(3) { animation-delay: 0.3s; }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-8px); }
+    }
+
+    .what {
+      margin: 3rem 0;
+    }
+
+    .what h2 {
+      font-size: 10px;
+      color: var(--warn);
+      margin-bottom: 1.5rem;
+    }
+
+    .what ul {
+      list-style: none;
+    }
+
+    .what li {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+
+    .what li::before {
+      content: '>';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    .how {
+      margin: 3rem 0;
+    }
+
+    .how h2 {
+      font-size: 10px;
+      color: var(--warn);
+      margin-bottom: 1.5rem;
+    }
+
+    .how ul {
+      list-style: none;
+      margin-bottom: 1.5rem;
+    }
+
+    .how li {
+      margin-bottom: 1rem;
+      padding-left: 1.5rem;
+      position: relative;
+    }
+
+    .how li::before {
+      content: '>';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+    }
+
+    .how .note {
+      color: var(--text-dim);
+      font-size: 10px;
+    }
+
+    .philosophy {
+      margin: 4rem 0;
+      padding: 2rem;
+      border: 2px solid var(--text-dim);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .philosophy p {
+      margin-bottom: 1.5rem;
+    }
+
+    .philosophy p:last-child {
+      margin-bottom: 0;
+      color: var(--text-dim);
+    }
+
+    .cta {
+      text-align: center;
+      margin: 4rem 0;
+    }
+
+    .cta a {
+      display: inline-block;
+      padding: 1rem 2rem;
+      background: var(--accent);
+      color: var(--bg);
+      text-decoration: none;
+      transition: all 0.1s;
+      box-shadow: 4px 4px 0 var(--accent-dim);
+    }
+
+    .cta a:hover {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0 var(--accent-dim);
+    }
+
+    .cta a:active {
+      transform: translate(4px, 4px);
+      box-shadow: none;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 4rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--text-dim);
+      color: var(--text-dim);
+      font-size: 8px;
+    }
+
+    footer a {
+      color: var(--text-dim);
+    }
+
+    footer a:hover {
+      color: var(--accent);
+    }
+
+    .what a {
+      color: var(--text-dim);
+    }
+
+    .what a:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 480px) {
+      body {
+        font-size: 10px;
+      }
+      .logo {
+        font-size: 1.5rem;
+      }
+      .container {
+        padding: 2rem 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1 class="logo">$HONE</h1>
+      <p class="tagline">personal finance software you actually own</p>
+    </header>
+
+    <div class="hero">
+      <svg class="coin sprite" viewBox="0 0 16 16" width="48" height="48">
+        <rect x="5" y="1" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="2" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="1" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="14" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="2" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="3" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="5" y="14" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="3" width="10" height="10" fill="#facc15"/>
+        <rect x="6" y="4" width="1" height="1" fill="#fef08a"/>
+        <!-- capital H -->
+        <rect x="5" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="10" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="6" y="8" width="4" height="1" fill="#854d0e"/>
+      </svg>
+      <svg class="coin sprite" viewBox="0 0 16 16" width="48" height="48">
+        <rect x="5" y="1" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="2" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="1" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="14" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="2" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="3" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="5" y="14" width="6" height="1" fill="#facc15"/>
+        <rect x="3" y="3" width="10" height="10" fill="#facc15"/>
+        <rect x="6" y="4" width="1" height="1" fill="#fef08a"/>
+        <!-- capital H -->
+        <rect x="5" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="10" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="6" y="8" width="4" height="1" fill="#854d0e"/>
+      </svg>
+      <svg class="coin sprite" viewBox="0 0 16 16" width="48" height="48">
+        <rect x="5" y="1" width="6" height="1" fill="#fbbf24"/>
+        <rect x="3" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="2" width="2" height="1" fill="#fbbf24"/>
+        <rect x="2" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="3" width="1" height="2" fill="#fbbf24"/>
+        <rect x="1" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="14" y="5" width="1" height="6" fill="#fbbf24"/>
+        <rect x="2" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="13" y="11" width="1" height="2" fill="#fbbf24"/>
+        <rect x="3" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="11" y="13" width="2" height="1" fill="#fbbf24"/>
+        <rect x="5" y="14" width="6" height="1" fill="#facc15"/>
+        <rect x="3" y="3" width="10" height="10" fill="#facc15"/>
+        <rect x="6" y="4" width="1" height="1" fill="#fef08a"/>
+        <!-- capital H -->
+        <rect x="5" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="10" y="5" width="1" height="7" fill="#854d0e"/>
+        <rect x="6" y="8" width="4" height="1" fill="#854d0e"/>
+      </svg>
+    </div>
+
+    <section class="what">
+      <h2>FINDS THE WASTE</h2>
+      <ul>
+        <li>Zombie subscriptions you forgot about</li>
+        <li>Services that quietly raised prices</li>
+        <li>Duplicate apps doing the same thing</li>
+        <li><a href="https://github.com/heskew/hone/issues">and more...</a></li>
+      </ul>
+    </section>
+
+    <section class="how">
+      <h2>HOW IT WORKS</h2>
+      <ul>
+        <li>Import CSVs from your banks</li>
+        <li>Algorithms detect recurring patterns</li>
+        <li>Optionally add local AI for smarter classification</li>
+      </ul>
+      <p class="note">No credentials stored. No cloud APIs. Encrypted at rest. Your data stays home.</p>
+    </section>
+
+    <section class="philosophy">
+      <p>I built this for myself.</p>
+      <p>It runs on my machine. My bank doesn't know about it. Neither does anyone else.</p>
+      <p>No cloud. No subscriptions. No surveillance.</p>
+      <p>Use it if you want. Fork it. Or just know that software like this is possible.</p>
+    </section>
+
+    <div class="cta">
+      <a href="https://github.com/heskew/hone">VIEW SOURCE</a>
+    </div>
+
+    <footer>
+      <p>made by <a href="https://github.com/heskew">heskew</a> &middot; <a href="https://hone.fyi">docs</a> &middot; <a href="https://github.com/heskew/hone/blob/main/LICENSE">MIT</a></p>
+    </footer>
+  </div>
+</body>
+</html>

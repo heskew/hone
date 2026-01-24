@@ -1,0 +1,58 @@
+[package]
+name = "hone-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "REST API server for Hone personal finance tool"
+
+[dependencies]
+# Internal crates
+hone-core = { path = "../hone-core" }    # Core library (db, import, detection)
+
+# Web framework
+axum.workspace = true            # HTTP routing and handlers
+tower.workspace = true           # Middleware framework
+tower-http.workspace = true      # CORS, static files, security headers
+
+# Async runtime
+tokio.workspace = true           # Async runtime for server
+
+# Serialization
+serde.workspace = true           # Request/response (de)serialization
+serde_json.workspace = true      # JSON API bodies
+
+# Cryptography
+sha2.workspace = true            # Content hashing
+base64 = "0.22"                  # Receipt image encoding
+subtle = "2.5"                   # Constant-time comparison for API keys
+jsonwebtoken = "9.3"             # Cloudflare Access JWT validation
+
+# HTTP client (for fetching CF public keys)
+reqwest.workspace = true         # Fetch Cloudflare Access public keys
+
+# Network utilities
+ipnet = "2.9"                    # IP/CIDR parsing for trusted networks
+
+# Error handling
+anyhow.workspace = true          # Error propagation
+
+# Logging
+tracing.workspace = true         # Request logging
+tracing-subscriber.workspace = true # Log formatting
+
+# Data processing
+chrono.workspace = true          # Date handling for API params
+
+# File utilities
+tempfile = "3.10"                # Temp files for backup verification
+
+# MCP (Model Context Protocol)
+rmcp.workspace = true            # MCP server for LLM tool access
+schemars.workspace = true        # JSON Schema for tool parameters
+
+[dev-dependencies]
+# Test framework
+tower = { workspace = true, features = ["util"] } # Test service utilities
+http-body-util = "0.1"           # HTTP body handling in tests
+hyper = "1.4"                    # HTTP client for tests
+tempfile = "3.10"                # Temp databases for tests

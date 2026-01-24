@@ -1,0 +1,148 @@
+name: Audit Trivyignore
+
+on:
+  schedule:
+    # Weekly check (Mondays 10am UTC, after docker build)
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit-trivyignore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Trivy
+        run: |
+          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
+          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
+          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Check CVE fix status
+        id: check-cves
+        run: |
+          #!/bin/bash
+          set -e
+
+          # Extract CVEs from .trivyignore (skip comments and empty lines)
+          CVES=$(grep -E '^CVE-[0-9]+-[0-9]+' .trivyignore || true)
+
+          if [ -z "$CVES" ]; then
+            echo "No CVEs found in .trivyignore"
+            echo "has_fixes=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          echo "Checking CVEs: $CVES"
+
+          # Check each CVE against Trivy's vulnerability database
+          trivy image --download-db-only
+
+          FIXED_CVES=""
+          UNFIXED_CVES=""
+
+          for CVE in $CVES; do
+            echo "Checking $CVE..."
+
+            # Query the NVD/Trivy for fix status
+            # We use trivy's vuln db to check if Debian has a fix
+            STATUS=$(trivy db search "$CVE" 2>/dev/null | grep -i "debian" | head -1 || echo "")
+
+            if echo "$STATUS" | grep -qi "fixed"; then
+              echo "  ✓ $CVE has a fix available"
+              FIXED_CVES="$FIXED_CVES $CVE"
+            else
+              echo "  ✗ $CVE still unfixed"
+              UNFIXED_CVES="$UNFIXED_CVES $CVE"
+            fi
+          done
+
+          if [ -n "$FIXED_CVES" ]; then
+            echo "has_fixes=true" >> $GITHUB_OUTPUT
+            echo "fixed_cves=$FIXED_CVES" >> $GITHUB_OUTPUT
+          else
+            echo "has_fixes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update trivyignore with dates
+        run: |
+          #!/bin/bash
+          TODAY=$(date +%Y-%m-%d)
+
+          # Update last-checked date in header
+          if grep -q "Last checked:" .trivyignore; then
+            sed -i "s/Last checked: .*/Last checked: $TODAY/" .trivyignore
+          else
+            # Add header if not present
+            sed -i "1i # Last checked: $TODAY" .trivyignore
+          fi
+
+      - name: Create issue if fixes available
+        if: steps.check-cves.outputs.has_fixes == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fixedCves = '${{ steps.check-cves.outputs.fixed_cves }}'.trim().split(' ').filter(Boolean);
+
+            const body = `## CVE Fixes Now Available
+
+            The following CVEs in \`.trivyignore\` now have fixes available in Debian:
+
+            ${fixedCves.map(cve => `- ${cve}`).join('\n')}
+
+            ### Action Required
+            1. Update the base image in \`Dockerfile.release\`
+            2. Remove the fixed CVEs from \`.trivyignore\`
+            3. Run the Docker build to verify the fixes are applied
+
+            This issue was automatically created by the trivyignore-audit workflow.`;
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'security,trivyignore'
+            });
+
+            const existingIssue = issues.data.find(i => i.title.includes('CVE Fixes Available'));
+
+            if (existingIssue) {
+              // Update existing issue
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existingIssue.number,
+                body: body
+              });
+              console.log(`Updated issue #${existingIssue.number}`);
+            } else {
+              // Create new issue
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🔒 CVE Fixes Available - Update Base Image',
+                body: body,
+                labels: ['security', 'trivyignore']
+              });
+              console.log('Created new issue');
+            }
+
+      - name: Commit updated trivyignore
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          if git diff --quiet .trivyignore; then
+            echo "No changes to .trivyignore"
+          else
+            git add .trivyignore
+            git commit -m "chore: update .trivyignore last-checked date"
+            git push
+          fi

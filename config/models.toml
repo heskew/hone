@@ -1,0 +1,63 @@
+# Model Router Configuration
+#
+# This file defines model routing for different task types.
+# To customize, copy to ~/.local/share/hone/config/models.toml
+# and modify as needed.
+#
+# Task types:
+#   - fast_classification: Quick decisions (merchant category, subscription detection)
+#   - structured_extraction: JSON output (receipt parsing)
+#   - reasoning: Analysis requiring explanation (spending anomalies, duplicates)
+#   - vision: Image processing (receipt OCR)
+#   - narrative: Text generation (reports, summaries)
+
+[defaults]
+# Default model for all task types when no specific model is configured
+model = "gemma3"
+
+# Default timeout in seconds for API calls
+timeout_secs = 30
+
+# Number of retries on failure
+max_retries = 2
+
+# Fallback model if primary fails (optional)
+fallback_model = "llama3.2"
+
+[models.fast_classification]
+# Fast, lightweight tasks like merchant classification
+model = "gemma3"
+timeout_secs = 15
+max_retries = 1
+
+[models.structured_extraction]
+# Tasks requiring structured JSON output
+model = "gemma3"
+timeout_secs = 30
+max_retries = 2
+
+[models.reasoning]
+# Complex analysis tasks requiring explanation
+model = "gemma3"
+timeout_secs = 60
+max_retries = 2
+
+[models.vision]
+# Image processing tasks (receipt OCR)
+model = "llama3.2-vision:11b"
+timeout_secs = 120
+max_retries = 1
+
+[models.narrative]
+# Text generation for reports and summaries
+model = "gemma3"
+timeout_secs = 45
+max_retries = 2
+
+# Health tracking configuration
+[health]
+# Number of consecutive failures before marking model unhealthy
+failure_threshold = 3
+
+# Time in seconds to wait before retrying an unhealthy model
+recovery_wait_secs = 300

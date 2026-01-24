@@ -1,0 +1,3 @@
+# Example/placeholder values in deployment templates
+deploy/.env.example:sqlcipher-key:2
+docs/deployment.md:sqlcipher-key:32

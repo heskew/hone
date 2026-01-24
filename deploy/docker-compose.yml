@@ -1,0 +1,64 @@
+# Hone - Personal finance waste detection
+#
+# Basic deployment - Hone with external Ollama.
+# For network isolation options, see docs/deployment.md
+
+services:
+  hone:
+    image: ghcr.io/heskew/hone:latest
+    container_name: hone
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - hone-data:/data
+    ports:
+      - "3000:3000"
+    command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+
+volumes:
+  hone-data:
+
+# ---
+# Alternative: Isolated network with Ollama sidecar
+# Uncomment below and comment out the basic config above
+# This prevents ANY internet access from Hone
+# ---
+# services:
+#   hone:
+#     image: ghcr.io/heskew/hone:latest
+#     container_name: hone
+#     restart: unless-stopped
+#     env_file:
+#       - .env
+#     environment:
+#       - OLLAMA_HOST=http://ollama:11434
+#       - ANTHROPIC_COMPATIBLE_HOST=http://ollama:11434
+#     volumes:
+#       - hone-data:/data
+#     ports:
+#       - "3000:3000"
+#     networks:
+#       - hone-internal
+#     command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+#
+#   ollama:
+#     image: ollama/ollama
+#     container_name: ollama
+#     restart: unless-stopped
+#     volumes:
+#       - ollama-data:/root/.ollama
+#     networks:
+#       - hone-internal
+#     # To pull models, temporarily connect to bridge network:
+#     # docker network connect bridge ollama
+#     # ollama pull gemma3
+#     # docker network disconnect bridge ollama
+#
+# volumes:
+#   hone-data:
+#   ollama-data:
+#
+# networks:
+#   hone-internal:
+#     internal: true  # No default gateway - blocks all internet access

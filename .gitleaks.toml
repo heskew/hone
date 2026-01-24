@@ -1,0 +1,37 @@
+# Gitleaks configuration for Hone
+# https://github.com/gitleaks/gitleaks
+
+title = "Hone Secret Detection"
+
+[extend]
+useDefault = true
+
+# Additional patterns specific to this project
+[[rules]]
+id = "cloudflare-tunnel-token"
+description = "Cloudflare Tunnel Token"
+regex = '''TUNNEL_TOKEN\s*=\s*['"]?[A-Za-z0-9_-]{50,}['"]?'''
+secretGroup = 0
+
+[[rules]]
+id = "cloudflare-r2-key"
+description = "Cloudflare R2 Access Key"
+regex = '''R2_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)\s*=\s*['"]?[A-Za-z0-9+/=]{20,}['"]?'''
+secretGroup = 0
+
+[[rules]]
+id = "sqlcipher-key"
+description = "SQLCipher passphrase"
+regex = '''(?i)(sqlcipher|db)[-_]?(key|pass|passphrase)\s*=\s*['"]?[^\s'"]{8,}['"]?'''
+secretGroup = 0
+
+# Paths to ignore (test fixtures, docs with example placeholder values)
+[allowlist]
+paths = [
+    '''\.gitleaks\.toml$''',
+    '''CLAUDE\.md$''',
+    '''DESIGN\.md$''',
+    '''README\.md$''',
+    '''docs/.*\.md$''',
+    '''\.claude/skills/.*\.md$''',
+]

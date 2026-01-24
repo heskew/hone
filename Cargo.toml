@@ -1,0 +1,195 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hone-core",
+    "crates/hone-cli",
+    "crates/hone-server",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/heskew/hone"
+
+# =============================================================================
+# Workspace Dependencies (SBOM-like documentation)
+# =============================================================================
+# This section documents all dependencies used across the workspace.
+# Each dependency includes a comment explaining its purpose.
+# =============================================================================
+
+[workspace.dependencies]
+
+# -----------------------------------------------------------------------------
+# Async Runtime
+# -----------------------------------------------------------------------------
+
+# Tokio: Async runtime for Rust. Used for async/await support throughout
+# the application including web server, Ollama API calls, and file I/O.
+# Features: full (all runtime features for CLI and server)
+tokio = { version = "1.40", features = ["full"] }
+
+# -----------------------------------------------------------------------------
+# Web Framework
+# -----------------------------------------------------------------------------
+
+# Axum: Web framework built on hyper and tower. Used for the REST API server.
+# Features: macros (for route handlers), multipart (for file uploads)
+axum = { version = "0.7", features = ["macros", "multipart"] }
+
+# Tower: Middleware abstractions for async services. Used for request handling
+# middleware like authentication, logging, and CORS.
+tower = "0.5"
+
+# Tower-HTTP: HTTP-specific middleware for tower. Provides CORS, static file
+# serving, request tracing, and security headers.
+# Features: cors, fs (static files), trace (logging), set-header (CSP, etc.)
+tower-http = { version = "0.5", features = ["cors", "fs", "trace", "set-header"] }
+
+# -----------------------------------------------------------------------------
+# Database
+# -----------------------------------------------------------------------------
+
+# rusqlite: SQLite bindings for Rust. Core database access layer.
+# bundled-sqlcipher-vendored-openssl: Bundles SQLCipher for encryption at rest.
+# Static linking means no runtime OpenSSL dependency - important for Docker images.
+rusqlite = { version = "0.32", features = ["bundled-sqlcipher-vendored-openssl"] }
+
+# r2d2: Generic connection pool. Used for database connection pooling.
+r2d2 = "0.8"
+
+# r2d2_sqlite: SQLite-specific r2d2 adapter.
+r2d2_sqlite = "0.25"
+
+# argon2: Password hashing using Argon2id. Used for database key derivation
+# from the HONE_DB_KEY passphrase.
+argon2 = { version = "0.5", features = ["password-hash"] }
+
+# -----------------------------------------------------------------------------
+# Serialization
+# -----------------------------------------------------------------------------
+
+# serde: Serialization/deserialization framework. Used throughout for
+# JSON/YAML/TOML parsing and API request/response handling.
+serde = { version = "1.0", features = ["derive"] }
+
+# serde_json: JSON serialization. Used for API responses, Ollama communication,
+# and storing original CSV data as JSON.
+serde_json = "1.0"
+
+# serde_yaml: YAML serialization. Used for parsing prompt file frontmatter.
+serde_yaml = "0.9"
+
+# toml: TOML parsing. Used for model router configuration files.
+toml = "0.8"
+
+# -----------------------------------------------------------------------------
+# CLI
+# -----------------------------------------------------------------------------
+
+# clap: Command-line argument parsing. Used for the `hone` CLI with derive macros
+# for type-safe argument definitions.
+clap = { version = "4.5", features = ["derive"] }
+
+# -----------------------------------------------------------------------------
+# Data Parsing
+# -----------------------------------------------------------------------------
+
+# csv: CSV parsing. Used for importing bank transaction files (Chase, BofA,
+# Amex, Capital One, BECU formats).
+csv = "1.3"
+
+# -----------------------------------------------------------------------------
+# Date/Time
+# -----------------------------------------------------------------------------
+
+# chrono: Date and time library. Used for transaction dates, subscription
+# intervals, report periods, and timestamp handling.
+# Features: serde (for JSON serialization of dates)
+chrono = { version = "0.4", features = ["serde"] }
+
+# -----------------------------------------------------------------------------
+# HTTP Client
+# -----------------------------------------------------------------------------
+
+# reqwest: HTTP client. Used for Ollama API communication.
+# Uses rustls instead of OpenSSL for cross-compilation compatibility (ARM64).
+# default-features=false disables native-tls, rustls-tls enables rustls.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# -----------------------------------------------------------------------------
+# Error Handling
+# -----------------------------------------------------------------------------
+
+# thiserror: Derive macros for Error trait. Used for defining error types
+# in hone-core with automatic Display and Error implementations.
+thiserror = "1.0"
+
+# anyhow: Flexible error handling. Used in CLI and handlers for error
+# propagation with context.
+anyhow = "1.0"
+
+# -----------------------------------------------------------------------------
+# Logging
+# -----------------------------------------------------------------------------
+
+# tracing: Structured logging/diagnostics. Used for debug logging, performance
+# tracing, and request logging throughout the application.
+tracing = "0.1"
+
+# tracing-subscriber: Subscriber for tracing events. Formats and outputs logs.
+# Features: env-filter (RUST_LOG support for log level filtering)
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# -----------------------------------------------------------------------------
+# Cryptography
+# -----------------------------------------------------------------------------
+
+# sha2: SHA-256 hashing. Used for transaction deduplication (import_hash)
+# and receipt content hashing.
+sha2 = "0.10"
+
+# hex: Hexadecimal encoding. Used for displaying hashes as readable strings.
+hex = "0.4"
+
+# -----------------------------------------------------------------------------
+# Text Processing
+# -----------------------------------------------------------------------------
+
+# regex: Regular expression matching. Used for tag rules pattern matching
+# and merchant name pattern detection.
+regex = "1.10"
+
+# -----------------------------------------------------------------------------
+# Compression
+# -----------------------------------------------------------------------------
+
+# flate2: DEFLATE compression. Used for backup file compression.
+flate2 = "1.0"
+
+# -----------------------------------------------------------------------------
+# File System
+# -----------------------------------------------------------------------------
+
+# tempfile: Temporary file handling. Used for safe backup creation and
+# testing file operations.
+tempfile = "3.10"
+
+# dirs: Platform-specific directories. Used for finding data directory
+# (~/.local/share/hone on Linux/Mac) for prompts, config, and backups.
+dirs = "5.0"
+
+# -----------------------------------------------------------------------------
+# MCP (Model Context Protocol)
+# -----------------------------------------------------------------------------
+
+# rmcp: Rust SDK for Model Context Protocol. Used for exposing Hone data
+# to LLMs via MCP tools. Features:
+# - server: MCP server implementation
+# - macros: #[tool] and #[tool_router] derive macros
+# - transport-streamable-http-server: HTTP transport with SSE streaming
+rmcp = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server"] }
+
+# schemars: JSON Schema generation. Used by rmcp for tool parameter schemas.
+schemars = "1.0"

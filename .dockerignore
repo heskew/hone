@@ -1,0 +1,14 @@
+target/
+ui/node_modules/
+ui/test-results/
+ui/playwright-report/
+*.db
+*.db-*
+.git/
+.env
+.env.*
+.claude/
+docs/
+samples/
+*.md
+!README.md

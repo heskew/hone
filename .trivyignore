@@ -1,0 +1,26 @@
+# Trivy vulnerability ignore list
+# These are base image vulnerabilities without available fixes
+#
+# Last checked: 2026-01-19
+# Audited weekly by .github/workflows/trivyignore-audit.yml
+#
+# Format:
+#   # Description - reason for ignore
+#   # Added: YYYY-MM-DD | Status: affected/will_not_fix
+#   CVE-XXXX-XXXXX
+
+# zlib minizip component - not used by hone (compression uses different codepath)
+# Added: 2025-08-15 | Status: will_not_fix
+CVE-2023-45853
+
+# GnuPG out-of-bounds write - no fix available in Debian 12
+# Added: 2025-11-20 | Status: affected
+CVE-2025-68973
+
+# Linux-PAM directory traversal - no fix available in Debian 12
+# Added: 2025-12-01 | Status: affected
+CVE-2025-6020
+
+# glibc memalign integer overflow - no fix available in Debian 12
+# Added: 2026-01-16 | Status: affected
+CVE-2026-0861

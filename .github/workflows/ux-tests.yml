@@ -1,0 +1,107 @@
+name: UX Integration Tests
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'samples/**'
+      - '.github/workflows/ux-tests.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'ui/**'
+      - 'samples/**'
+      - '.github/workflows/ux-tests.yml'
+  workflow_dispatch:
+
+env:
+  TEST_DB: /tmp/hone-ux-test.db
+
+jobs:
+  ux-tests:
+    name: Playwright UX Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.92.0
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-ux-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-ux-
+
+      - name: Install OpenSSL (for SQLCipher)
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libssl-dev
+
+      - name: Build backend
+        run: cargo build --release --bin hone
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ui
+        run: npx playwright install --with-deps chromium
+
+      - name: Build frontend
+        working-directory: ui
+        run: npm run build
+
+      # Seed test database before running tests
+      - name: Seed test database
+        run: |
+          echo "Initializing test database..."
+          ./target/release/hone --no-encrypt --db $TEST_DB init
+
+          echo "Importing test data (with tagging and detection)..."
+          ./target/release/hone --no-encrypt --db $TEST_DB import \
+            --file samples/test_data.csv --bank chase
+
+          echo "Verifying seeded data..."
+          ./target/release/hone --no-encrypt --db $TEST_DB status
+
+      - name: Run Playwright UX tests
+        working-directory: ui
+        run: |
+          # Skip global setup since we already seeded the database
+          # Run all e2e test files with both github (CI annotations) and html (artifact upload) reporters
+          npx playwright test e2e/ --reporter=github --reporter=html
+        env:
+          CI: true
+          TEST_DB: ${{ env.TEST_DB }}
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: ui/playwright-report/
+          retention-days: 7
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ux-screenshots
+          path: ui/e2e/screenshots/
+          retention-days: 7
