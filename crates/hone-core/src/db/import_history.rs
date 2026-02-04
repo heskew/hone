@@ -170,6 +170,7 @@ impl Database {
                        s.tagged_by_bank_category, s.tagged_fallback,
                        s.subscriptions_found, s.zombies_detected, s.price_increases_detected,
                        s.duplicates_detected, s.receipts_matched,
+                       s.spending_anomalies_detected, s.tip_discrepancies_detected,
                        s.user_email, s.ollama_model,
                        s.status, s.processing_phase, s.processing_current, s.processing_total, s.processing_error,
                        s.tagging_duration_ms, s.normalizing_duration_ms, s.matching_duration_ms,
@@ -197,6 +198,7 @@ impl Database {
                        s.tagged_by_bank_category, s.tagged_fallback,
                        s.subscriptions_found, s.zombies_detected, s.price_increases_detected,
                        s.duplicates_detected, s.receipts_matched,
+                       s.spending_anomalies_detected, s.tip_discrepancies_detected,
                        s.user_email, s.ollama_model,
                        s.status, s.processing_phase, s.processing_current, s.processing_total, s.processing_error,
                        s.tagging_duration_ms, s.normalizing_duration_ms, s.matching_duration_ms,
@@ -381,13 +383,12 @@ impl Database {
         Ok(skipped)
     }
 
-    /// Helper to map a row to ImportSessionWithAccount
     fn map_import_session_row(
         row: &rusqlite::Row<'_>,
     ) -> rusqlite::Result<ImportSessionWithAccount> {
         let bank_str: String = row.get(4)?;
-        let status_str: Option<String> = row.get(20)?;
-        let created_at_str: String = row.get(30)?;
+        let status_str: Option<String> = row.get(22)?;
+        let created_at_str: String = row.get(32)?;
 
         Ok(ImportSessionWithAccount {
             session: ImportSession {
@@ -419,8 +420,8 @@ impl Database {
                     .as_deref()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(ImportStatus::Pending),
-                processing_phase: row.get(21)?,
-                processing_current: row.get::<_, Option<i64>>(22)?.unwrap_or(0),
+                processing_phase: row.get(23)?,
+                processing_current: row.get::<_, Option<i64>>(24)?.unwrap_or(0),
                 processing_total: row.get::<_, Option<i64>>(25)?.unwrap_or(0),
                 processing_error: row.get(26)?,
                 tagging_duration_ms: row.get(27)?,
@@ -755,6 +756,12 @@ impl Database {
                     .unwrap_or(0),
                 duplicates_detected: detection["duplicates_detected"].as_i64().unwrap_or(0),
                 receipts_matched: detection["receipts_matched"].as_i64().unwrap_or(0),
+                spending_anomalies_detected: detection["spending_anomalies_detected"]
+                    .as_i64()
+                    .unwrap_or(0),
+                tip_discrepancies_detected: detection["tip_discrepancies_detected"]
+                    .as_i64()
+                    .unwrap_or(0),
                 sample_transactions,
             })
         };
@@ -1034,6 +1041,12 @@ impl Database {
                     .unwrap_or(0),
                 duplicates_detected: detection["duplicates_detected"].as_i64().unwrap_or(0),
                 receipts_matched: detection["receipts_matched"].as_i64().unwrap_or(0),
+                spending_anomalies_detected: detection["spending_anomalies_detected"]
+                    .as_i64()
+                    .unwrap_or(0),
+                tip_discrepancies_detected: detection["tip_discrepancies_detected"]
+                    .as_i64()
+                    .unwrap_or(0),
                 sample_transactions,
             })
         };
@@ -1119,6 +1132,10 @@ impl Database {
                 - snapshot_a.price_increases_detected,
             duplicates_diff: snapshot_b.duplicates_detected - snapshot_a.duplicates_detected,
             receipts_matched_diff: snapshot_b.receipts_matched - snapshot_a.receipts_matched,
+            spending_anomalies_diff: snapshot_b.spending_anomalies_detected
+                - snapshot_a.spending_anomalies_detected,
+            tip_discrepancies_diff: snapshot_b.tip_discrepancies_detected
+                - snapshot_a.tip_discrepancies_detected,
         };
 
         // Compute tag and merchant differences
@@ -1252,6 +1269,12 @@ impl Database {
             price_increases_detected: detection["price_increases_detected"].as_i64().unwrap_or(0),
             duplicates_detected: detection["duplicates_detected"].as_i64().unwrap_or(0),
             receipts_matched: detection["receipts_matched"].as_i64().unwrap_or(0),
+            spending_anomalies_detected: detection["spending_anomalies_detected"]
+                .as_i64()
+                .unwrap_or(0),
+            tip_discrepancies_detected: detection["tip_discrepancies_detected"]
+                .as_i64()
+                .unwrap_or(0),
             sample_transactions,
         }))
     }
@@ -1385,6 +1408,8 @@ impl Database {
             price_increases_detected: session.price_increases_detected,
             duplicates_detected: session.duplicates_detected,
             receipts_matched: session.receipts_matched,
+            spending_anomalies_detected: session.spending_anomalies_detected,
+            tip_discrepancies_detected: session.tip_discrepancies_detected,
             sample_transactions,
         }))
     }
@@ -1448,6 +1473,10 @@ impl Database {
                 - snapshot_initial.duplicates_detected,
             receipts_matched_diff: snapshot_run.receipts_matched
                 - snapshot_initial.receipts_matched,
+            spending_anomalies_diff: snapshot_run.spending_anomalies_detected
+                - snapshot_initial.spending_anomalies_detected,
+            tip_discrepancies_diff: snapshot_run.tip_discrepancies_detected
+                - snapshot_initial.tip_discrepancies_detected,
         };
 
         // Compute tag and merchant differences
@@ -1596,7 +1625,7 @@ mod tests {
             fallback: 1,
         };
 
-        db.update_import_session_results(id, 20, 5, &tagging, 3, 1, 0, 2, 1)
+        db.update_import_session_results(id, 20, 5, &tagging, 3, 1, 0, 2, 1, 1, 1)
             .unwrap();
 
         let loaded = db.get_import_session(id).unwrap().unwrap();
@@ -1605,6 +1634,8 @@ mod tests {
         assert_eq!(loaded.session.tagged_by_rule, 5);
         assert_eq!(loaded.session.tagged_by_pattern, 10);
         assert_eq!(loaded.session.subscriptions_found, 3);
+        assert_eq!(loaded.session.spending_anomalies_detected, 1);
+        assert_eq!(loaded.session.tip_discrepancies_detected, 1);
     }
 
     #[test]

@@ -72,12 +72,13 @@ impl Insight for SpendingExplainerInsight {
     async fn analyze(&self, ctx: &AnalysisContext<'_>) -> Result<Vec<Finding>> {
         let mut findings = Vec::new();
 
-        let today = Utc::now().date_naive();
+        // Use the end of the context date range as "today" for analysis
+        let today = ctx.date_range.1;
 
-        // Current month period
-        let current_month_start = today.with_day(1).expect("Day 1 always valid");
+        // Current month period starts from the beginning of the context range
+        let current_month_start = ctx.date_range.0;
 
-        // 3-month baseline period (the 3 months before current month)
+        // 3-month baseline period (the 3 months before current month start)
         let baseline_end = current_month_start - Duration::days(1);
         let baseline_start = baseline_end - Duration::days(90);
 
@@ -350,7 +351,7 @@ mod tests {
     use super::*;
     use crate::db::Database;
     use crate::models::{Bank, NewTransaction, TagSource};
-    use chrono::Duration;
+    use chrono::{Duration, NaiveDate};
 
     #[tokio::test]
     async fn test_spending_explainer_detects_changes() {
@@ -362,7 +363,7 @@ mod tests {
             .upsert_account("Test Account", Bank::Chase, None)
             .unwrap();
 
-        let today = Utc::now().date_naive();
+        let today = NaiveDate::from_ymd_opt(2024, 1, 15).unwrap();
 
         // Add transactions in current month (high spending)
         for i in 0..5 {
@@ -411,14 +412,18 @@ mod tests {
                 )
                 .unwrap();
 
-                let txs = db.list_transactions(None, 1, 0).unwrap();
-                db.add_transaction_tag(txs[0].id, dining_tag.id, TagSource::Manual, None)
+                let txs = db.list_transactions(None, 100, 0).unwrap();
+                // Find the specifically inserted transaction to avoid tagging the wrong one
+                let newly_inserted = txs.iter().find(|t| t.import_hash == format!("baseline_{}_{}", month, i)).unwrap();
+                db.add_transaction_tag(newly_inserted.id, dining_tag.id, TagSource::Manual, None)
                     .unwrap();
             }
         }
 
         let insight = SpendingExplainerInsight::new();
-        let ctx = AnalysisContext::current_month(&db, None);
+        // Use a fixed date context instead of current_month() to avoid flakiness
+        let month_start = NaiveDate::from_ymd_opt(2024, 1, 1).unwrap();
+        let ctx = AnalysisContext::new(&db, None, (month_start, today));
         let findings = insight.analyze(&ctx).await.unwrap();
 
         // Should detect the spending increase in Dining

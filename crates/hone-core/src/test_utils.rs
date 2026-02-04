@@ -79,11 +79,17 @@ async fn handle_tags() -> Json<TagsResponse> {
 async fn handle_generate(Json(request): Json<GenerateRequest>) -> Json<GenerateResponse> {
     // Detect what type of request this is based on prompt content
     // These patterns match the prompt files in prompts/*.md
-    let response = if request.prompt.contains("Description: \"")
-        && request.prompt.contains(r#"{"merchant":"#)
+    let response = if (request.prompt.contains("Description: \"")
+        || request.prompt.contains("Extract the merchant name from:"))
+        && (request.prompt.contains(r#"{"merchant":"#)
+            || request.prompt.contains(r#"{"merchant":"#))
     {
         // Normalization request (normalize_merchant.md pattern)
         handle_normalize_mock(&request.prompt)
+    } else if request.prompt.contains("Classify this merchant: ") {
+        // Merchant classification (classify_merchant.md pattern)
+        let classification = classify_merchant_mock(&request.prompt);
+        serde_json::to_string(&classification).unwrap()
     } else if request.prompt.contains("subscription service")
         || request.prompt.contains("SUBSCRIPTION services")
     {
@@ -103,7 +109,7 @@ async fn handle_generate(Json(request): Json<GenerateRequest>) -> Json<GenerateR
         // Receipt parsing (vision) - return mock receipt (parse_receipt.md pattern)
         handle_receipt_mock()
     } else {
-        // Default: merchant classification
+        // Default: try merchant classification
         let classification = classify_merchant_mock(&request.prompt);
         serde_json::to_string(&classification).unwrap()
     };
@@ -148,6 +154,14 @@ fn handle_normalize_mock(prompt: &str) -> String {
 
 /// Extract merchant from normalize prompt (uses "Description:" instead of "Merchant:")
 fn extract_merchant_from_prompt_normalize(prompt: &str) -> String {
+    // Current format: Extract the merchant name from: "{{description}}"
+    if let Some(start) = prompt.find("Extract the merchant name from: \"") {
+        let after_start = &prompt[start + 33..];
+        if let Some(end) = after_start.find('"') {
+            return after_start[..end].to_string();
+        }
+    }
+    // Legacy format: Description: "merchant"
     if let Some(start) = prompt.find("Description: \"") {
         let after_start = &prompt[start + 14..];
         if let Some(end) = after_start.find('"') {
@@ -332,14 +346,21 @@ fn classify_merchant_mock(prompt: &str) -> MerchantClassificationResponse {
 
 /// Extract merchant name from the Ollama prompt
 fn extract_merchant_from_prompt(prompt: &str) -> String {
-    // Look for: Merchant: "SOMETHING"
+    // Current format: Classify this merchant: {{merchant}}
+    if let Some(start) = prompt.find("Classify this merchant: ") {
+        let after_start = &prompt[start + 24..];
+        // Look for newline or end of string
+        let end = after_start.find('\n').unwrap_or(after_start.len());
+        return after_start[..end].trim().to_string();
+    }
+    // Legacy/Subscription format: Merchant: "SOMETHING"
     if let Some(start) = prompt.find("Merchant: \"") {
         let after_start = &prompt[start + 11..];
         if let Some(end) = after_start.find('"') {
             return after_start[..end].to_string();
         }
     }
-    // Fallback: just use the whole prompt
+    // Fallback: just use the whole prompt (risky if examples contain merchant names)
     prompt.to_string()
 }
 
