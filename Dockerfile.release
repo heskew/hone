@@ -1,15 +1,15 @@
 # Release Dockerfile - packages pre-built binaries
 # Used by CI/CD after cross-compilation
 #
-# Base image: Docker Hardened Images (dhi.io) - requires DHI credentials.
-# DHI provides security-hardened Debian with non-root user by default.
+# Base image: Google Distroless (cc-debian12)
+# Distroless provides a minimal, secure execution environment with no shell, 
+# package manager, or standard utilities. It runs as nonroot by default.
 #
-# Public alternatives (no credentials needed):
-#   FROM gcr.io/distroless/cc-debian12  (smallest, no shell - recommended)
-#   FROM debian:bookworm-slim           (has shell for debugging)
-# Note: distroless runs as nonroot by default; debian needs manual user setup.
+# Alternatives:
+#   FROM debian:bookworm-slim    (Standard Debian, includes shell for debugging)
+#   FROM dhi.io/debian-base      (Hardened Debian, includes shell)
 
-FROM dhi.io/debian-base:bookworm
+FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 
 # Copy the correct binary based on target platform

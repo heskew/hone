@@ -14,8 +14,11 @@ RUN cd ui && npm ci
 COPY ui/ ui/
 RUN cd ui && npm run build
 
-# Stage 3: Docker Hardened Image runtime
-FROM dhi.io/debian-base:bookworm
+# Stage 3: Runtime stage
+# Using Google Distroless (cc-debian12) for minimal attack surface.
+# Distroless is the gold standard for security, providing a minimal attack surface 
+# with no shell, package manager, or unnecessary utilities. 
+FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 COPY --from=backend-builder /app/target/release/hone /app/hone
 COPY --from=frontend-builder /app/ui/dist /app/ui/dist
