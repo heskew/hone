@@ -316,6 +316,8 @@ pub async fn import_csv_core(
         0,
         0,
         0,
+        0,
+        0,
     ) {
         warn!("Failed to update import session results: {}", e);
     }

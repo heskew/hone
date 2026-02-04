@@ -209,6 +209,8 @@ pub async fn cmd_rebuild(db: &Database, session_id: Option<i64>, yes: bool) -> R
                 detection.price_increases_detected as i64,
                 detection.duplicates_detected as i64,
                 current.session.receipts_matched,
+                detection.spending_anomalies_detected as i64,
+                detection.tip_discrepancies_detected as i64,
             )?;
             println!(
                 "\nUpdated import session {} with new processing results",

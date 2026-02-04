@@ -551,6 +551,8 @@ async fn run_async_reprocess(
         detection_results.price_increases_detected as i64,
         detection_results.duplicates_detected as i64,
         receipts_matched,
+        detection_results.spending_anomalies_detected as i64,
+        detection_results.tip_discrepancies_detected as i64,
     )?;
 
     // Capture "after" snapshot linked to this run

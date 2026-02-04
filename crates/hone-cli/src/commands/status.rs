@@ -147,6 +147,7 @@ pub fn cmd_alerts(db_path: &Path, include_dismissed: bool, no_encrypt: bool) -> 
             hone_core::models::AlertType::Duplicate => "👯",
             hone_core::models::AlertType::Resume => "🔄",
             hone_core::models::AlertType::SpendingAnomaly => "📊",
+            hone_core::models::AlertType::TipDiscrepancy => "💸",
         };
 
         let dismissed_mark = if alert.dismissed { " (dismissed)" } else { "" };
