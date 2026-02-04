@@ -45,6 +45,8 @@ impl Database {
         price_increases_detected: i64,
         duplicates_detected: i64,
         receipts_matched: i64,
+        spending_anomalies_detected: i64,
+        tip_discrepancies_detected: i64,
     ) -> Result<()> {
         let conn = self.conn()?;
         conn.execute(
@@ -62,7 +64,9 @@ impl Database {
                 zombies_detected = ?,
                 price_increases_detected = ?,
                 duplicates_detected = ?,
-                receipts_matched = ?
+                receipts_matched = ?,
+                spending_anomalies_detected = ?,
+                tip_discrepancies_detected = ?
             WHERE id = ?
             "#,
             params![
@@ -79,6 +83,8 @@ impl Database {
                 price_increases_detected,
                 duplicates_detected,
                 receipts_matched,
+                spending_anomalies_detected,
+                tip_discrepancies_detected,
                 session_id,
             ],
         )?;
@@ -250,6 +256,7 @@ impl Database {
                    s.tagged_by_bank_category, s.tagged_fallback,
                    s.subscriptions_found, s.zombies_detected, s.price_increases_detected,
                    s.duplicates_detected, s.receipts_matched,
+                   s.spending_anomalies_detected, s.tip_discrepancies_detected,
                    s.user_email, s.ollama_model,
                    s.status, s.processing_phase, s.processing_current, s.processing_total, s.processing_error,
                    s.tagging_duration_ms, s.normalizing_duration_ms, s.matching_duration_ms,
@@ -404,24 +411,26 @@ impl Database {
                 price_increases_detected: row.get(15)?,
                 duplicates_detected: row.get(16)?,
                 receipts_matched: row.get(17)?,
-                user_email: row.get(18)?,
-                ollama_model: row.get(19)?,
+                spending_anomalies_detected: row.get(18)?,
+                tip_discrepancies_detected: row.get(19)?,
+                user_email: row.get(20)?,
+                ollama_model: row.get(21)?,
                 status: status_str
                     .as_deref()
                     .and_then(|s| s.parse().ok())
                     .unwrap_or(ImportStatus::Pending),
                 processing_phase: row.get(21)?,
                 processing_current: row.get::<_, Option<i64>>(22)?.unwrap_or(0),
-                processing_total: row.get::<_, Option<i64>>(23)?.unwrap_or(0),
-                processing_error: row.get(24)?,
-                tagging_duration_ms: row.get(25)?,
-                normalizing_duration_ms: row.get(26)?,
-                matching_duration_ms: row.get(27)?,
-                detecting_duration_ms: row.get(28)?,
-                total_duration_ms: row.get(29)?,
+                processing_total: row.get::<_, Option<i64>>(25)?.unwrap_or(0),
+                processing_error: row.get(26)?,
+                tagging_duration_ms: row.get(27)?,
+                normalizing_duration_ms: row.get(28)?,
+                matching_duration_ms: row.get(29)?,
+                detecting_duration_ms: row.get(30)?,
+                total_duration_ms: row.get(31)?,
                 created_at: parse_datetime(&created_at_str),
             },
-            account_name: row.get(31)?,
+            account_name: row.get(33)?,
         })
     }
 
@@ -583,9 +592,11 @@ impl Database {
             price_increases_detected,
             duplicates_detected,
             receipts_matched,
-        ): (i64, i64, i64, i64, i64) = conn.query_row(
+            spending_anomalies_detected,
+            tip_discrepancies_detected,
+        ): (i64, i64, i64, i64, i64, i64, i64) = conn.query_row(
             r#"SELECT subscriptions_found, zombies_detected, price_increases_detected,
-                      duplicates_detected, receipts_matched
+                      duplicates_detected, receipts_matched, spending_anomalies_detected, tip_discrepancies_detected
                FROM import_sessions WHERE id = ?"#,
             params![session_id],
             |row| {
@@ -595,6 +606,8 @@ impl Database {
                     row.get(2)?,
                     row.get(3)?,
                     row.get(4)?,
+                    row.get(5)?,
+                    row.get(6)?,
                 ))
             },
         )?;
@@ -637,6 +650,8 @@ impl Database {
             price_increases_detected,
             duplicates_detected,
             receipts_matched,
+            spending_anomalies_detected,
+            tip_discrepancies_detected,
             sample_transactions,
         })
     }
@@ -660,6 +675,8 @@ impl Database {
             "price_increases_detected": snapshot.price_increases_detected,
             "duplicates_detected": snapshot.duplicates_detected,
             "receipts_matched": snapshot.receipts_matched,
+            "spending_anomalies_detected": snapshot.spending_anomalies_detected,
+            "tip_discrepancies_detected": snapshot.tip_discrepancies_detected,
         })
         .to_string();
 

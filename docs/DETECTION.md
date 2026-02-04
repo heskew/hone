@@ -6,7 +6,7 @@ date: 2026-01-24
 
 # Detection Algorithms
 
-Hone uses six detection algorithms to identify wasteful spending.
+Hone uses seven detection algorithms to identify wasteful spending.
 
 ## Subscription Pre-Filter
 
@@ -82,6 +82,14 @@ Flags unusual spending patterns.
 3. Only trigger if baseline >= $50 (avoid noise from low-spend categories)
 4. Ollama provides explanation with summary and reasons when available
 5. Re-analysis: can re-run with different models via API/UI
+
+## Tip Discrepancy Detection
+
+Identifies transactions where the bank amount is significantly higher than the receipt total (potential tip or tax discrepancy).
+
+1. Compare linked transactions' bank amount vs `expected_amount` (populated from receipt total)
+2. Alert if: `abs(bank_amount) - abs(expected_amount) > tip_discrepancy_threshold`
+3. Default threshold: $0.50 (configurable via `DetectionConfig`)
 
 ## Subscription Detection Thresholds
 

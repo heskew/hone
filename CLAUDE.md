@@ -92,13 +92,14 @@ See `docs/FEATURES.md` for comprehensive feature list.
 
 ## Detection Algorithms
 
-See `docs/DETECTION.md` for algorithm details. Six algorithms:
+See `docs/DETECTION.md` for algorithm details. Seven algorithms:
 - Zombie Detection - forgotten recurring charges
 - Price Increase Detection - subscription price changes
 - Duplicate Detection - multiple services in same category
 - Auto-Cancellation Detection - stopped subscriptions
 - Resume Detection - reactivated subscriptions
 - Spending Anomaly Detection - unusual spending patterns
+- Tip Discrepancy Detection - bank amount higher than receipt total
 
 ## AI Integration
 

@@ -41,6 +41,8 @@ pub struct DetectResponse {
     pub zombies_detected: usize,
     pub price_increases_detected: usize,
     pub duplicates_detected: usize,
+    pub spending_anomalies_detected: usize,
+    pub tip_discrepancies_detected: usize,
 }
 
 /// POST /api/detect - Run waste detection
@@ -82,12 +84,14 @@ pub async fn run_detection(
         None,
         None,
         Some(&format!(
-            "kind={}, subscriptions={}, zombies={}, increases={}, duplicates={}",
+            "kind={}, subscriptions={}, zombies={}, increases={}, duplicates={}, anomalies={}, tips={}",
             params.kind,
             results.subscriptions_found,
             results.zombies_detected,
             results.price_increases_detected,
-            results.duplicates_detected
+            results.duplicates_detected,
+            results.spending_anomalies_detected,
+            results.tip_discrepancies_detected
         )),
     )?;
 
@@ -96,6 +100,8 @@ pub async fn run_detection(
         zombies_detected: results.zombies_detected,
         price_increases_detected: results.price_increases_detected,
         duplicates_detected: results.duplicates_detected,
+        spending_anomalies_detected: results.spending_anomalies_detected,
+        tip_discrepancies_detected: results.tip_discrepancies_detected,
     }))
 }
 
@@ -119,6 +125,8 @@ pub struct ImportResponse {
     pub zombies_detected: usize,
     pub price_increases_detected: usize,
     pub duplicates_detected: usize,
+    pub spending_anomalies_detected: usize,
+    pub tip_discrepancies_detected: usize,
 }
 
 /// POST /api/import - Import transactions from CSV
@@ -384,6 +392,8 @@ pub async fn import_csv_core(
         zombies_detected: 0,
         price_increases_detected: 0,
         duplicates_detected: 0,
+        spending_anomalies_detected: 0,
+        tip_discrepancies_detected: 0,
     }))
 }
 
@@ -549,19 +559,23 @@ async fn run_async_import_processing(
         detection_results.price_increases_detected as i64,
         detection_results.duplicates_detected as i64,
         receipts_matched as i64,
+        detection_results.spending_anomalies_detected as i64,
+        detection_results.tip_discrepancies_detected as i64,
     )?;
 
     // Mark as completed
     db.mark_import_completed(session_id)?;
 
     info!(
-        "Async import processing completed for session {} in {}ms - subs: {}, zombies: {}, increases: {}, duplicates: {}",
+        "Async import processing completed for session {} in {}ms - subs: {}, zombies: {}, increases: {}, duplicates: {}, anomalies: {}, tips: {}",
         session_id,
         total_duration_ms,
         detection_results.subscriptions_found,
         detection_results.zombies_detected,
         detection_results.price_increases_detected,
-        detection_results.duplicates_detected
+        detection_results.duplicates_detected,
+        detection_results.spending_anomalies_detected,
+        detection_results.tip_discrepancies_detected
     );
 
     Ok(())

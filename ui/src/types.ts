@@ -56,7 +56,7 @@ export interface Subscription {
   created_at: string;
 }
 
-export type AlertType = "zombie" | "price_increase" | "duplicate" | "resume" | "spending_anomaly";
+export type AlertType = "zombie" | "price_increase" | "duplicate" | "resume" | "spending_anomaly" | "tip_discrepancy";
 
 export interface ServiceFeature {
   service: string;
@@ -176,6 +176,7 @@ export interface DetectionResults {
   duplicates_detected: number;
   auto_cancelled: number;
   resumes_detected: number;
+  tip_discrepancies_detected: number;
 }
 
 export interface ImportTaggingBreakdown {
@@ -205,6 +206,7 @@ export interface ImportResponse {
   zombies_detected: number;
   price_increases_detected: number;
   duplicates_detected: number;
+  tip_discrepancies_detected: number;
 }
 
 // ========== Import History Types ==========

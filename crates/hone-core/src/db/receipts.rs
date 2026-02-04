@@ -203,11 +203,32 @@ impl Database {
 
     /// Link receipt to transaction
     pub fn link_receipt_to_transaction(&self, receipt_id: i64, transaction_id: i64) -> Result<()> {
-        let conn = self.conn()?;
-        conn.execute(
+        let mut conn = self.conn()?;
+
+        // Get receipt total to update transaction's expected_amount
+        let receipt_total: Option<f64> = conn
+            .query_row(
+                "SELECT receipt_total FROM receipts WHERE id = ?",
+                params![receipt_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+
+        let tx = conn.transaction()?;
+
+        tx.execute(
             "UPDATE receipts SET transaction_id = ?, status = 'matched' WHERE id = ?",
             params![transaction_id, receipt_id],
         )?;
+
+        if let Some(total) = receipt_total {
+            tx.execute(
+                "UPDATE transactions SET expected_amount = ? WHERE id = ?",
+                params![total, transaction_id],
+            )?;
+        }
+
+        tx.commit()?;
         Ok(())
     }
 

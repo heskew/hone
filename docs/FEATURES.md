@@ -12,7 +12,7 @@ Comprehensive list of implemented features.
 
 - Full database layer (schema defined inline, no migrations during development)
 - CSV import with auto-detection (web UI and CLI)
-- All six detection algorithms (zombie, price increase, duplicate, auto-cancellation, resume, spending anomaly)
+- All seven detection algorithms (zombie, price increase, duplicate, auto-cancellation, resume, spending anomaly, tip discrepancy)
 - Subscription lifecycle monitoring (auto-detect cancelled, alert on resume)
 - CLI with rich output (modular command structure in `commands/`)
 - REST API with authentication and audit logging
@@ -105,6 +105,7 @@ See [design/receipts.md](design/receipts.md) for full workflow.
 - AI parsing of receipts via Ollama vision models
 - Receipt status tracking (pending → matched/manual_review/orphaned)
 - Auto-matching receipts to transactions on import
+- Tip discrepancy auto-detection (flags transactions that exceed receipt total)
 - Match candidates API for manual linking
 
 ## Ollama Integration

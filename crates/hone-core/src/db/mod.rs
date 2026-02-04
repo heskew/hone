@@ -601,6 +601,8 @@ impl Database {
                 price_increases_detected INTEGER DEFAULT 0,
                 duplicates_detected INTEGER DEFAULT 0,
                 receipts_matched INTEGER DEFAULT 0,
+                spending_anomalies_detected INTEGER DEFAULT 0,
+                tip_discrepancies_detected INTEGER DEFAULT 0,
                 -- Metadata
                 user_email TEXT,
                 ollama_model TEXT,                          -- Ollama model used for tagging/normalization (if any)

@@ -59,6 +59,8 @@ pub struct DetectionConfig {
     /// Days after which an acknowledgment is considered stale and the subscription
     /// may be flagged as a zombie again (0 = never stale)
     pub acknowledgment_stale_days: i64,
+    /// Threshold for tip discrepancy detection (absolute dollars)
+    pub tip_discrepancy_threshold: f64,
 }
 
 impl Default for DetectionConfig {
@@ -79,6 +81,7 @@ impl Default for DetectionConfig {
             spending_anomaly_min_baseline: 50.0, // Only flag if baseline >= $50/month
             // Re-acknowledgment defaults
             acknowledgment_stale_days: 90, // Re-check after 90 days (~quarterly)
+            tip_discrepancy_threshold: 0.50, // Flag if diff > $0.50
         }
     }
 }
@@ -93,6 +96,7 @@ pub struct DetectionResults {
     pub auto_cancelled: usize,
     pub resumes_detected: usize,
     pub spending_anomalies_detected: usize,
+    pub tip_discrepancies_detected: usize,
 }
 
 /// Main detector that runs all algorithms
@@ -204,10 +208,11 @@ impl<'a> WasteDetector<'a> {
         let spending_anomalies_detected = self
             .detect_spending_anomalies_with_progress(progress)
             .await?;
+        let tip_discrepancies_detected = self.detect_tip_discrepancies()?;
 
         info!(
-            "Detection complete: {} subscriptions, {} auto-cancelled, {} resumed, {} zombies, {} price increases, {} duplicates, {} spending anomalies",
-            subscriptions_found, auto_cancelled, resumes_detected, zombies_detected, price_increases_detected, duplicates_detected, spending_anomalies_detected
+            "Detection complete: {} subscriptions, {} auto-cancelled, {} resumed, {} zombies, {} price increases, {} duplicates, {} spending anomalies, {} tip discrepancies",
+            subscriptions_found, auto_cancelled, resumes_detected, zombies_detected, price_increases_detected, duplicates_detected, spending_anomalies_detected, tip_discrepancies_detected
         );
 
         Ok(DetectionResults {
@@ -218,6 +223,7 @@ impl<'a> WasteDetector<'a> {
             auto_cancelled,
             resumes_detected,
             spending_anomalies_detected,
+            tip_discrepancies_detected,
         })
     }
 
@@ -822,6 +828,38 @@ impl<'a> WasteDetector<'a> {
                     .create_alert(AlertType::Resume, Some(sub.id), Some(&message))?;
 
                 debug!("Detected resumed subscription: {}", sub.merchant);
+                count += 1;
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Detect transactions where the amount is higher than the receipt total
+    fn detect_tip_discrepancies(&self) -> Result<usize> {
+        let transactions = self.db.list_transactions(None, 10000, 0)?;
+        let mut count = 0;
+
+        for tx in transactions {
+            let expected = match tx.expected_amount {
+                Some(e) => e.abs(),
+                None => continue,
+            };
+
+            let actual = tx.amount.abs();
+            let diff = actual - expected;
+
+            if diff > self.config.tip_discrepancy_threshold {
+                let message = format!(
+                    "{} charge of ${:.2} is higher than receipt total of ${:.2} (potential tip: ${:.2})",
+                    tx.merchant_normalized.as_deref().unwrap_or(&tx.description),
+                    actual,
+                    expected,
+                    diff
+                );
+
+                self.db
+                    .create_alert(AlertType::TipDiscrepancy, None, Some(&message))?;
                 count += 1;
             }
         }
@@ -2090,5 +2128,63 @@ mod tests {
         assert_eq!(config.smart_interval_consistency, 0.50); // 50%
         assert_eq!(config.smart_min_transactions, 2);
         assert_eq!(config.ollama_confidence_threshold, 0.7);
+    }
+
+    #[tokio::test]
+    async fn test_detect_tip_discrepancy() {
+        let db = Database::in_memory().unwrap();
+
+        // Create account
+        let account_id = db
+            .upsert_account("Test Account", crate::models::Bank::Chase, None)
+            .unwrap();
+
+        // Create a transaction with an expected amount (e.g. from a receipt)
+        // Bank amount: $55.00
+        // Receipt total: $45.00
+        // Expected amount: $45.00
+        let tx_id = db
+            .insert_transaction(
+                account_id,
+                &crate::models::NewTransaction {
+                    date: Utc::now().date_naive(),
+                    description: "RESTO BAR".to_string(),
+                    amount: -55.00,
+                    category: Some("Dining".to_string()),
+                    import_hash: "tip_test_hash".to_string(),
+                    original_data: None,
+                    import_format: None,
+                    card_member: None,
+                    payment_method: None,
+                },
+            )
+            .unwrap()
+            .unwrap();
+
+        // Manually set expected_amount as if a receipt was linked
+        let conn = db.conn().unwrap();
+        conn.execute(
+            "UPDATE transactions SET expected_amount = 45.00 WHERE id = ?",
+            [tx_id],
+        )
+        .unwrap();
+
+        let detector = WasteDetector::new(&db);
+        let results = detector.detect_all().await.unwrap();
+
+        // Should have detected 1 tip discrepancy
+        assert_eq!(results.tip_discrepancies_detected, 1);
+
+        // Verify a tip discrepancy alert was created
+        let alerts = db.list_alerts(false).unwrap();
+        let tip_alert = alerts
+            .iter()
+            .find(|a| a.alert_type == AlertType::TipDiscrepancy)
+            .expect("Should have created a tip discrepancy alert");
+        
+        assert!(tip_alert.message.as_ref().unwrap().contains("RESTO BAR"));
+        assert!(tip_alert.message.as_ref().unwrap().contains("$55.00"));
+        assert!(tip_alert.message.as_ref().unwrap().contains("$45.00"));
+        assert!(tip_alert.message.as_ref().unwrap().contains("potential tip: $10.00"));
     }
 }

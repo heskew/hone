@@ -315,6 +315,8 @@ pub enum AlertType {
     Resume,
     /// Spending in a category changed dramatically vs baseline
     SpendingAnomaly,
+    /// Transaction amount is higher than receipt total (e.g. unrecorded tip)
+    TipDiscrepancy,
 }
 
 impl AlertType {
@@ -325,6 +327,7 @@ impl AlertType {
             Self::Duplicate => "duplicate",
             Self::Resume => "resume",
             Self::SpendingAnomaly => "spending_anomaly",
+            Self::TipDiscrepancy => "tip_discrepancy",
         }
     }
 
@@ -335,6 +338,7 @@ impl AlertType {
             Self::Duplicate => "Duplicate Service",
             Self::Resume => "Subscription Resumed",
             Self::SpendingAnomaly => "Spending Change",
+            Self::TipDiscrepancy => "Tip Discrepancy",
         }
     }
 
@@ -345,6 +349,7 @@ impl AlertType {
             Self::Duplicate => "You have multiple services in this category",
             Self::Resume => "A subscription you cancelled has started charging again",
             Self::SpendingAnomaly => "Your spending in this category changed significantly",
+            Self::TipDiscrepancy => "This transaction is higher than your receipt total",
         }
     }
 }
@@ -1512,6 +1517,8 @@ pub struct ImportSession {
     pub price_increases_detected: i64,
     pub duplicates_detected: i64,
     pub receipts_matched: i64,
+    pub spending_anomalies_detected: i64,
+    pub tip_discrepancies_detected: i64,
     // Metadata
     pub user_email: Option<String>,
     pub ollama_model: Option<String>,
@@ -1754,6 +1761,8 @@ pub struct ReprocessSnapshot {
     pub price_increases_detected: i64,
     pub duplicates_detected: i64,
     pub receipts_matched: i64,
+    pub spending_anomalies_detected: i64,
+    pub tip_discrepancies_detected: i64,
     /// Sample of transactions with their current tags for change detection
     pub sample_transactions: Vec<TransactionTagSnapshot>,
 }
@@ -1930,6 +1939,8 @@ pub struct DetectionResultsDiff {
     pub price_increases_diff: i64,
     pub duplicates_diff: i64,
     pub receipts_matched_diff: i64,
+    pub spending_anomalies_diff: i64,
+    pub tip_discrepancies_diff: i64,
 }
 
 /// A transaction's tag difference between two runs

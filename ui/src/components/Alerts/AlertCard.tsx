@@ -1,4 +1,4 @@
-import { Ghost, TrendingUp, Users, RotateCcw, ChevronRight, BarChart3 } from "lucide-react";
+import { Ghost, TrendingUp, Users, RotateCcw, ChevronRight, BarChart3, Coins } from "lucide-react";
 import { useState } from "react";
 import type { Alert } from "../../types";
 import { AlertDetailModal } from "./AlertDetailModal";
@@ -30,6 +30,8 @@ export function AlertCard({ alert, onDismiss, onAcknowledge, onRestore, onExclud
         return "alert-card-resume cursor-pointer";
       case "spending_anomaly":
         return "alert-card-zombie cursor-pointer"; // Same style as zombie for now
+      case "tip_discrepancy":
+        return "alert-card-increase cursor-pointer"; // Same style as price increase for now
     }
   };
 
@@ -45,6 +47,8 @@ export function AlertCard({ alert, onDismiss, onAcknowledge, onRestore, onExclud
         return <RotateCcw className={`w-5 h-5 ${alert.dismissed ? "text-hone-400" : "text-waste"}`} />;
       case "spending_anomaly":
         return <BarChart3 className={`w-5 h-5 ${alert.dismissed ? "text-hone-400" : "text-attention"}`} />;
+      case "tip_discrepancy":
+        return <Coins className={`w-5 h-5 ${alert.dismissed ? "text-hone-400" : "text-attention"}`} />;
     }
   };
 
@@ -60,6 +64,8 @@ export function AlertCard({ alert, onDismiss, onAcknowledge, onRestore, onExclud
         return "Subscription Resumed";
       case "spending_anomaly":
         return "Spending Change";
+      case "tip_discrepancy":
+        return "Tip Discrepancy";
     }
   };
 

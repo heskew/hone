@@ -9,8 +9,11 @@ What's next for Hone.
 ## Near Term
 
 ### Receipts
-- Tip discrepancy auto-detection
 - Reconciliation alerts
+
+## Completed
+
+- Tip discrepancy auto-detection (implemented 2026-02-03)
 
 ### UI
 - Filter subscriptions/alerts by import session
