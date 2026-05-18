@@ -1,7 +1,7 @@
 # Trivy vulnerability ignore list
 # These are base image vulnerabilities without available fixes
 #
-# Last checked: 2026-05-11
+# Last checked: 2026-05-18
 # Audited weekly by .github/workflows/trivyignore-audit.yml
 #
 # Format:
