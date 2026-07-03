@@ -120,7 +120,10 @@ async fn test_zombie_detection() {
 
     // Run detection
     let detector = WasteDetector::new(&db);
-    let results = detector.detect_zombies_only().await.expect("Detection failed");
+    let results = detector
+        .detect_zombies_only()
+        .await
+        .expect("Detection failed");
 
     // All subscriptions should be detected as zombies since they're unacknowledged
     // and have been running for 3+ months
@@ -188,7 +191,10 @@ async fn test_price_increase_detection() {
     // Note: The subscription detection algorithm requires amounts within 10% of median
     // A $14.99 to $16.50 change (~10%) may not pass subscription detection
     // Let's just verify the detection runs without error
-    let results = detector.detect_increases_only().await.expect("Detection failed");
+    let results = detector
+        .detect_increases_only()
+        .await
+        .expect("Detection failed");
 
     // The price increase detection depends on:
     // 1. A subscription being detected (amounts must be consistent)
@@ -214,7 +220,10 @@ async fn test_duplicate_detection() {
 
     // Run detection
     let detector = WasteDetector::new(&db);
-    let results = detector.detect_duplicates_only().await.expect("Detection failed");
+    let results = detector
+        .detect_duplicates_only()
+        .await
+        .expect("Detection failed");
 
     // Netflix and Hulu should be detected as duplicate streaming services
     assert!(

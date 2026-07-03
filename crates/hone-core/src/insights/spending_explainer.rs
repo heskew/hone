@@ -414,7 +414,10 @@ mod tests {
 
                 let txs = db.list_transactions(None, 100, 0).unwrap();
                 // Find the specifically inserted transaction to avoid tagging the wrong one
-                let newly_inserted = txs.iter().find(|t| t.import_hash == format!("baseline_{}_{}", month, i)).unwrap();
+                let newly_inserted = txs
+                    .iter()
+                    .find(|t| t.import_hash == format!("baseline_{}_{}", month, i))
+                    .unwrap();
                 db.add_transaction_tag(newly_inserted.id, dining_tag.id, TagSource::Manual, None)
                     .unwrap();
             }

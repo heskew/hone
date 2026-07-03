@@ -2181,10 +2181,14 @@ mod tests {
             .iter()
             .find(|a| a.alert_type == AlertType::TipDiscrepancy)
             .expect("Should have created a tip discrepancy alert");
-        
+
         assert!(tip_alert.message.as_ref().unwrap().contains("RESTO BAR"));
         assert!(tip_alert.message.as_ref().unwrap().contains("$55.00"));
         assert!(tip_alert.message.as_ref().unwrap().contains("$45.00"));
-        assert!(tip_alert.message.as_ref().unwrap().contains("potential tip: $10.00"));
+        assert!(tip_alert
+            .message
+            .as_ref()
+            .unwrap()
+            .contains("potential tip: $10.00"));
     }
 }
