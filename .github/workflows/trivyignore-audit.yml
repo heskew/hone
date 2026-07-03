@@ -6,104 +6,105 @@ on:
     - cron: '0 10 * * 1'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   audit-trivyignore:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Install Trivy
-        run: |
-          sudo apt-get install -y wget apt-transport-https gnupg lsb-release
-          wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | sudo apt-key add -
-          echo deb https://aquasecurity.github.io/trivy-repo/deb $(lsb_release -sc) main | sudo tee -a /etc/apt/sources.list.d/trivy.list
-          sudo apt-get update
-          sudo apt-get install -y trivy
+      # Scan the published image with NO ignore file, so ignored CVEs show up
+      # with their current fix status
+      - name: Scan published image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ghcr.io/${{ github.repository_owner }}/hone-money:latest
+          format: 'json'
+          output: 'scan.json'
+          exit-code: '0'
 
-      - name: Check CVE fix status
+      - name: Check ignored CVEs against scan
         id: check-cves
         run: |
-          #!/bin/bash
           set -e
 
-          # Extract CVEs from .trivyignore (skip comments and empty lines)
-          CVES=$(grep -E '^CVE-[0-9]+-[0-9]+' .trivyignore || true)
+          CVES=$(grep -oE '^CVE-[0-9]+-[0-9]+' .trivyignore || true)
 
           if [ -z "$CVES" ]; then
             echo "No CVEs found in .trivyignore"
-            echo "has_fixes=false" >> $GITHUB_OUTPUT
+            echo "has_findings=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          echo "Checking CVEs: $CVES"
-
-          # Check each CVE against Trivy's vulnerability database
-          trivy image --download-db-only
-
           FIXED_CVES=""
-          UNFIXED_CVES=""
+          STALE_CVES=""
 
           for CVE in $CVES; do
-            echo "Checking $CVE..."
+            COUNT=$(jq -r --arg cve "$CVE" \
+              '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == $cve)] | length' scan.json)
 
-            # Query the NVD/Trivy for fix status
-            # We use trivy's vuln db to check if Debian has a fix
-            STATUS=$(trivy db search "$CVE" 2>/dev/null | grep -i "debian" | head -1 || echo "")
+            if [ "$COUNT" = "0" ]; then
+              echo "○ $CVE no longer present in image (stale ignore entry)"
+              STALE_CVES="$STALE_CVES $CVE"
+              continue
+            fi
 
-            if echo "$STATUS" | grep -qi "fixed"; then
-              echo "  ✓ $CVE has a fix available"
+            FIX=$(jq -r --arg cve "$CVE" \
+              '[.Results[]?.Vulnerabilities[]? | select(.VulnerabilityID == $cve) | .FixedVersion // empty] | map(select(. != "")) | first // empty' scan.json)
+
+            if [ -n "$FIX" ]; then
+              echo "✓ $CVE has a fix available: $FIX"
               FIXED_CVES="$FIXED_CVES $CVE"
             else
-              echo "  ✗ $CVE still unfixed"
-              UNFIXED_CVES="$UNFIXED_CVES $CVE"
+              echo "✗ $CVE still present, no fix available"
             fi
           done
 
-          if [ -n "$FIXED_CVES" ]; then
-            echo "has_fixes=true" >> $GITHUB_OUTPUT
-            echo "fixed_cves=$FIXED_CVES" >> $GITHUB_OUTPUT
+          if [ -n "$FIXED_CVES" ] || [ -n "$STALE_CVES" ]; then
+            echo "has_findings=true" >> "$GITHUB_OUTPUT"
+            echo "fixed_cves=$FIXED_CVES" >> "$GITHUB_OUTPUT"
+            echo "stale_cves=$STALE_CVES" >> "$GITHUB_OUTPUT"
           else
-            echo "has_fixes=false" >> $GITHUB_OUTPUT
+            echo "has_findings=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Update trivyignore with dates
-        run: |
-          #!/bin/bash
-          TODAY=$(date +%Y-%m-%d)
-
-          # Update last-checked date in header
-          if grep -q "Last checked:" .trivyignore; then
-            sed -i "s/Last checked: .*/Last checked: $TODAY/" .trivyignore
-          else
-            # Add header if not present
-            sed -i "1i # Last checked: $TODAY" .trivyignore
-          fi
-
-      - name: Create issue if fixes available
-        if: steps.check-cves.outputs.has_fixes == 'true'
-        uses: actions/github-script@v7
+      - name: Create or update issue
+        if: steps.check-cves.outputs.has_findings == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const fixedCves = '${{ steps.check-cves.outputs.fixed_cves }}'.trim().split(' ').filter(Boolean);
+            const staleCves = '${{ steps.check-cves.outputs.stale_cves }}'.trim().split(' ').filter(Boolean);
 
-            const body = `## CVE Fixes Now Available
+            let body = '## .trivyignore Audit Findings\n\n';
 
-            The following CVEs in \`.trivyignore\` now have fixes available in Debian:
+            if (fixedCves.length) {
+              body += `### Fixes Now Available
+
+            These CVEs are still present in the image but now have fixed versions:
 
             ${fixedCves.map(cve => `- ${cve}`).join('\n')}
 
-            ### Action Required
-            1. Update the base image in \`Dockerfile.release\`
-            2. Remove the fixed CVEs from \`.trivyignore\`
-            3. Run the Docker build to verify the fixes are applied
+            Update the base image in \`Dockerfile.release\`, rebuild, then remove them from \`.trivyignore\`.
 
-            This issue was automatically created by the trivyignore-audit workflow.`;
+            `;
+            }
 
-            // Check if issue already exists
+            if (staleCves.length) {
+              body += `### Stale Entries
+
+            These CVEs no longer appear in the image scan at all — remove them from \`.trivyignore\`:
+
+            ${staleCves.map(cve => `- ${cve}`).join('\n')}
+
+            `;
+            }
+
+            body += '\nThis issue was automatically created by the trivyignore-audit workflow.';
+
             const issues = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -111,10 +112,9 @@ jobs:
               labels: 'security,trivyignore'
             });
 
-            const existingIssue = issues.data.find(i => i.title.includes('CVE Fixes Available'));
+            const existingIssue = issues.data.find(i => i.title.includes('.trivyignore audit'));
 
             if (existingIssue) {
-              // Update existing issue
               await github.rest.issues.update({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -123,26 +123,12 @@ jobs:
               });
               console.log(`Updated issue #${existingIssue.number}`);
             } else {
-              // Create new issue
               await github.rest.issues.create({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                title: '🔒 CVE Fixes Available - Update Base Image',
+                title: '🔒 .trivyignore audit: entries need attention',
                 body: body,
                 labels: ['security', 'trivyignore']
               });
               console.log('Created new issue');
             }
-
-      - name: Commit updated trivyignore
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          if git diff --quiet .trivyignore; then
-            echo "No changes to .trivyignore"
-          else
-            git add .trivyignore
-            git commit -m "chore: update .trivyignore last-checked date"
-            git push
-          fi
