@@ -124,7 +124,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 # thiserror: Derive macros for Error trait. Used for defining error types
 # in hone-core with automatic Display and Error implementations.
-thiserror = "1.0"
+thiserror = "2.0"
 
 # anyhow: Flexible error handling. Used in CLI and handlers for error
 # propagation with context.
