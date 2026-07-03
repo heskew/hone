@@ -20,6 +20,11 @@ RUN cd ui && npm run build
 # with no shell, package manager, or unnecessary utilities. 
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
+
+# Lets the server warn when asked to bind loopback, which is unreachable
+# through the container port mapping
+ENV HONE_IN_CONTAINER=1
+
 COPY --from=backend-builder /app/target/release/hone /app/hone
 COPY --from=frontend-builder /app/ui/dist /app/ui/dist
 EXPOSE 3000

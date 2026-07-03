@@ -18,6 +18,16 @@ pub async fn cmd_serve(
     println!("🚀 Starting Hone web server...");
     println!("   Database: {}", db_path.display());
     println!("   Listening: http://{}:{}", host, port);
+    if is_loopback_host(host) && running_in_container() {
+        println!();
+        println!(
+            "   ⚠️  Bound to {} inside a container — published ports will NOT be reachable.",
+            host
+        );
+        println!(
+            "      Use --host 0.0.0.0 to accept connections through the container port mapping."
+        );
+    }
     if let Some(dir) = static_dir {
         println!("   Static files: {}", dir.display());
     }
@@ -123,4 +133,43 @@ pub async fn cmd_serve(
     hone_server::serve_with_config(db, host, port, static_dir_str, config).await?;
 
     Ok(())
+}
+
+/// Loopback inside a container is almost always a misconfiguration: the
+/// container's port mapping forwards to its external interface, so a server
+/// bound to 127.0.0.1 is unreachable from the host (issue #1).
+fn is_loopback_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false)
+}
+
+fn running_in_container() -> bool {
+    // HONE_IN_CONTAINER is baked into the published images; /.dockerenv covers
+    // plain Docker for images that predate the env var
+    std::env::var_os("HONE_IN_CONTAINER").is_some() || Path::new("/.dockerenv").exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn loopback_hosts_detected() {
+        assert!(is_loopback_host("127.0.0.1"));
+        assert!(is_loopback_host("127.0.0.53"));
+        assert!(is_loopback_host("localhost"));
+        assert!(is_loopback_host("LOCALHOST"));
+        assert!(is_loopback_host("::1"));
+    }
+
+    #[test]
+    fn non_loopback_hosts_not_flagged() {
+        assert!(!is_loopback_host("0.0.0.0"));
+        assert!(!is_loopback_host("::"));
+        assert!(!is_loopback_host("192.168.1.10"));
+        assert!(!is_loopback_host("example.internal"));
+    }
 }
