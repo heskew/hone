@@ -82,7 +82,7 @@ serde_json = "1.0"
 serde_yaml = "0.9"
 
 # toml: TOML parsing. Used for model router configuration files.
-toml = "0.8"
+toml = "1.1"
 
 # -----------------------------------------------------------------------------
 # CLI
