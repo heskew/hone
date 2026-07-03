@@ -12,6 +12,10 @@
 FROM gcr.io/distroless/cc-debian12
 WORKDIR /app
 
+# Lets the server warn when asked to bind loopback, which is unreachable
+# through the container port mapping
+ENV HONE_IN_CONTAINER=1
+
 # Copy the correct binary based on target platform
 # Binary must already be executable (set in CI)
 ARG TARGETARCH
