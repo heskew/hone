@@ -64,6 +64,10 @@ For local/development use, add `--no-auth` to the command:
 command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db", "--no-auth"]
 ```
 
+> **Keep `--host 0.0.0.0` when editing `command:`** — without it the server only
+> listens inside the container and the published port won't work. The startup log
+> confirms the bind address on the `Listening:` line.
+
 ### Security Requirements
 
 **Important**: Enable JWT validation for production deployments behind Cloudflare Access.
@@ -294,6 +298,26 @@ docker compose exec hone /app/hone backup create
 ```bash
 docker compose down
 ```
+
+## Troubleshooting
+
+### `curl: (52) Empty reply from server`
+
+The server is running but bound to the wrong interface. Check the startup log:
+
+```bash
+docker compose logs hone | grep Listening
+```
+
+If it shows `Listening: http://127.0.0.1:3000`, the `--host 0.0.0.0` argument is
+missing from your `command:` line — loopback inside the container is unreachable
+through Docker's port mapping. Restore the full command:
+
+```yaml
+command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+```
+
+Newer images also print a startup warning when this misconfiguration is detected.
 
 ## Mac Training Setup
 
