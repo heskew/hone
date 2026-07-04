@@ -140,10 +140,16 @@ pub struct AppState {
 /// **API keys**: Compared using constant-time comparison to prevent timing attacks.
 async fn auth_middleware(
     State(state): State<Arc<AppState>>,
-    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
     request: Request,
     next: Next,
 ) -> Response {
+    // axum 0.8 removed the blanket Option<T> extractor; read ConnectInfo from
+    // extensions so the middleware still works when the router is built
+    // without into_make_service_with_connect_info (as in tests)
+    let connect_info = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .copied();
     if !state.config.require_auth {
         return next.run(request).await;
     }
@@ -541,13 +547,13 @@ pub fn create_router_with_options(
             get(handlers::list_accounts).post(handlers::create_account),
         )
         .route(
-            "/accounts/:id",
+            "/accounts/{id}",
             get(handlers::get_account)
                 .put(handlers::update_account)
                 .delete(handlers::delete_account),
         )
         .route(
-            "/accounts/:id/entity",
+            "/accounts/{id}/entity",
             axum::routing::patch(handlers::update_account_entity),
         )
         // Transactions
@@ -559,32 +565,32 @@ pub fn create_router_with_options(
         // Subscriptions
         .route("/subscriptions", get(handlers::list_subscriptions))
         .route(
-            "/subscriptions/:id/acknowledge",
+            "/subscriptions/{id}/acknowledge",
             post(handlers::acknowledge_subscription),
         )
         .route(
-            "/subscriptions/:id/cancel",
+            "/subscriptions/{id}/cancel",
             post(handlers::cancel_subscription),
         )
         .route(
-            "/subscriptions/:id/exclude",
+            "/subscriptions/{id}/exclude",
             post(handlers::exclude_subscription),
         )
         .route(
-            "/subscriptions/:id/unexclude",
+            "/subscriptions/{id}/unexclude",
             post(handlers::unexclude_subscription),
         )
-        .route("/subscriptions/:id", delete(handlers::delete_subscription))
+        .route("/subscriptions/{id}", delete(handlers::delete_subscription))
         // Alerts
         .route("/alerts", get(handlers::list_alerts))
-        .route("/alerts/:id/dismiss", post(handlers::dismiss_alert))
+        .route("/alerts/{id}/dismiss", post(handlers::dismiss_alert))
         .route(
-            "/alerts/:id/dismiss-exclude",
+            "/alerts/{id}/dismiss-exclude",
             post(handlers::dismiss_alert_exclude),
         )
-        .route("/alerts/:id/restore", post(handlers::restore_alert))
+        .route("/alerts/{id}/restore", post(handlers::restore_alert))
         .route(
-            "/alerts/:id/reanalyze",
+            "/alerts/{id}/reanalyze",
             post(handlers::reanalyze_spending_alert),
         )
         // Insights
@@ -592,12 +598,12 @@ pub fn create_router_with_options(
         .route("/insights/all", get(handlers::list_insights))
         .route("/insights/count", get(handlers::count_insights))
         .route("/insights/refresh", post(handlers::refresh_insights))
-        .route("/insights/:id", get(handlers::get_insight))
-        .route("/insights/:id/dismiss", post(handlers::dismiss_insight))
-        .route("/insights/:id/snooze", post(handlers::snooze_insight))
-        .route("/insights/:id/restore", post(handlers::restore_insight))
+        .route("/insights/{id}", get(handlers::get_insight))
+        .route("/insights/{id}/dismiss", post(handlers::dismiss_insight))
+        .route("/insights/{id}/snooze", post(handlers::snooze_insight))
+        .route("/insights/{id}/restore", post(handlers::restore_insight))
         .route(
-            "/insights/:id/feedback",
+            "/insights/{id}/feedback",
             post(handlers::set_insight_feedback),
         )
         // Detection
@@ -607,32 +613,35 @@ pub fn create_router_with_options(
         .route("/import/json", post(handlers::import_csv_json))
         // Import history
         .route("/imports", get(handlers::list_import_sessions))
-        .route("/imports/:id", get(handlers::get_import_session))
+        .route("/imports/{id}", get(handlers::get_import_session))
         .route(
-            "/imports/:id/transactions",
+            "/imports/{id}/transactions",
             get(handlers::get_import_session_transactions),
         )
         .route(
-            "/imports/:id/skipped",
+            "/imports/{id}/skipped",
             get(handlers::get_import_session_skipped),
         )
-        .route("/imports/:id/cancel", post(handlers::cancel_import_session))
         .route(
-            "/imports/:id/reprocess",
+            "/imports/{id}/cancel",
+            post(handlers::cancel_import_session),
+        )
+        .route(
+            "/imports/{id}/reprocess",
             post(handlers::reprocess_import_session),
         )
         .route(
-            "/imports/:id/reprocess-comparison",
+            "/imports/{id}/reprocess-comparison",
             get(handlers::get_reprocess_comparison),
         )
         // Reprocess runs (historical comparison)
-        .route("/imports/:id/runs", get(handlers::list_reprocess_runs))
+        .route("/imports/{id}/runs", get(handlers::list_reprocess_runs))
         .route(
-            "/imports/:id/runs/compare",
+            "/imports/{id}/runs/compare",
             get(handlers::compare_reprocess_runs),
         )
         .route(
-            "/imports/:session_id/runs/:run_id",
+            "/imports/{session_id}/runs/{run_id}",
             get(handlers::get_reprocess_run),
         )
         // Audit log
@@ -641,18 +650,18 @@ pub fn create_router_with_options(
         .route("/tags", get(handlers::list_tags).post(handlers::create_tag))
         .route("/tags/tree", get(handlers::get_tag_tree))
         .route(
-            "/tags/:id",
+            "/tags/{id}",
             get(handlers::get_tag)
                 .patch(handlers::update_tag)
                 .delete(handlers::delete_tag),
         )
         // Transaction tagging
         .route(
-            "/transactions/:id/tags",
+            "/transactions/{id}/tags",
             get(handlers::get_transaction_tags).post(handlers::add_transaction_tag),
         )
         .route(
-            "/transactions/:tx_id/tags/:tag_id",
+            "/transactions/{tx_id}/tags/{tag_id}",
             axum::routing::delete(handlers::remove_transaction_tag),
         )
         // Tag rules
@@ -661,7 +670,7 @@ pub fn create_router_with_options(
             get(handlers::list_tag_rules).post(handlers::create_tag_rule),
         )
         .route(
-            "/rules/:id",
+            "/rules/{id}",
             axum::routing::delete(handlers::delete_tag_rule),
         )
         .route("/rules/test", post(handlers::test_rules))
@@ -678,11 +687,11 @@ pub fn create_router_with_options(
         .route("/reports/by-entity", get(handlers::report_by_entity))
         .route("/reports/by-location", get(handlers::report_by_location))
         .route(
-            "/reports/vehicle-costs/:id",
+            "/reports/vehicle-costs/{id}",
             get(handlers::report_vehicle_costs),
         )
         .route(
-            "/reports/property-expenses/:id",
+            "/reports/property-expenses/{id}",
             get(handlers::report_property_expenses),
         )
         // Entities
@@ -691,24 +700,24 @@ pub fn create_router_with_options(
             get(handlers::list_entities).post(handlers::create_entity),
         )
         .route(
-            "/entities/:id",
+            "/entities/{id}",
             get(handlers::get_entity)
                 .patch(handlers::update_entity)
                 .delete(handlers::delete_entity),
         )
-        .route("/entities/:id/archive", post(handlers::archive_entity))
-        .route("/entities/:id/unarchive", post(handlers::unarchive_entity))
+        .route("/entities/{id}/archive", post(handlers::archive_entity))
+        .route("/entities/{id}/unarchive", post(handlers::unarchive_entity))
         // Mileage Logs (for vehicle entities)
         .route(
-            "/entities/:id/mileage",
+            "/entities/{id}/mileage",
             get(handlers::list_mileage_logs).post(handlers::create_mileage_log),
         )
         .route(
-            "/entities/:id/miles",
+            "/entities/{id}/miles",
             get(handlers::get_vehicle_total_miles),
         )
         .route(
-            "/mileage/:id",
+            "/mileage/{id}",
             axum::routing::delete(handlers::delete_mileage_log),
         )
         // Locations
@@ -717,66 +726,66 @@ pub fn create_router_with_options(
             get(handlers::list_locations).post(handlers::create_location),
         )
         .route(
-            "/locations/:id",
+            "/locations/{id}",
             get(handlers::get_location).delete(handlers::delete_location),
         )
         // Transaction Splits
         .route(
-            "/transactions/:id/splits",
+            "/transactions/{id}/splits",
             get(handlers::get_transaction_splits).post(handlers::create_split),
         )
         .route(
-            "/splits/:id",
+            "/splits/{id}",
             get(handlers::get_split)
                 .patch(handlers::update_split)
                 .delete(handlers::delete_split),
         )
         // Transaction location
         .route(
-            "/transactions/:id/location",
+            "/transactions/{id}/location",
             post(handlers::update_transaction_location),
         )
         // Transaction trip assignment
         .route(
-            "/transactions/:id/trip",
+            "/transactions/{id}/trip",
             post(handlers::assign_transaction_to_trip),
         )
         // Receipts (attached to transactions)
         .route(
-            "/transactions/:id/receipts",
+            "/transactions/{id}/receipts",
             get(handlers::get_transaction_receipts).post(handlers::upload_receipt),
         )
         .route(
-            "/receipts/:id",
+            "/receipts/{id}",
             get(handlers::get_receipt).delete(handlers::delete_receipt),
         )
-        .route("/receipts/:id/parse", post(handlers::parse_receipt))
+        .route("/receipts/{id}/parse", post(handlers::parse_receipt))
         // Receipt-first workflow
         .route(
             "/receipts",
             get(handlers::list_receipts).post(handlers::upload_pending_receipt),
         )
         .route(
-            "/receipts/:id/link",
+            "/receipts/{id}/link",
             post(handlers::link_receipt_to_transaction),
         )
         .route(
-            "/receipts/:id/status",
+            "/receipts/{id}/status",
             post(handlers::update_receipt_status),
         )
-        .route("/receipts/:id/unlink", post(handlers::unlink_receipt))
+        .route("/receipts/{id}/unlink", post(handlers::unlink_receipt))
         .route(
-            "/receipts/:id/candidates",
+            "/receipts/{id}/candidates",
             get(handlers::get_receipt_match_candidates),
         )
         .route("/receipts/auto-match", post(handlers::auto_match_receipts))
         // AI Suggestions
         .route(
-            "/transactions/:id/suggest-entity",
+            "/transactions/{id}/suggest-entity",
             get(handlers::suggest_entity),
         )
         .route(
-            "/transactions/:id/suggest-split",
+            "/transactions/{id}/suggest-split",
             get(handlers::suggest_split),
         )
         // Trips/Events
@@ -785,17 +794,17 @@ pub fn create_router_with_options(
             get(handlers::list_trips).post(handlers::create_trip),
         )
         .route(
-            "/trips/:id",
+            "/trips/{id}",
             get(handlers::get_trip)
                 .patch(handlers::update_trip)
                 .delete(handlers::delete_trip),
         )
-        .route("/trips/:id/archive", post(handlers::archive_trip))
+        .route("/trips/{id}/archive", post(handlers::archive_trip))
         .route(
-            "/trips/:id/transactions",
+            "/trips/{id}/transactions",
             get(handlers::get_trip_transactions),
         )
-        .route("/trips/:id/spending", get(handlers::get_trip_spending))
+        .route("/trips/{id}/spending", get(handlers::get_trip_spending))
         // Ollama metrics, health, and reprocessing
         .route("/ollama/stats", get(handlers::ollama_stats))
         .route(
@@ -815,21 +824,21 @@ pub fn create_router_with_options(
         )
         // Transaction reprocessing
         .route(
-            "/transactions/:id/reprocess",
+            "/transactions/{id}/reprocess",
             post(handlers::reprocess_transaction),
         )
         // Transaction archiving
         .route(
-            "/transactions/:id/archive",
+            "/transactions/{id}/archive",
             post(handlers::archive_transaction),
         )
         .route(
-            "/transactions/:id/unarchive",
+            "/transactions/{id}/unarchive",
             post(handlers::unarchive_transaction),
         )
         // Merchant name update with learning
         .route(
-            "/transactions/:id/merchant",
+            "/transactions/{id}/merchant",
             put(handlers::update_merchant_name),
         )
         // Export
@@ -845,22 +854,22 @@ pub fn create_router_with_options(
         .route("/backup/prune", post(handlers::prune_backups))
         .route("/backup/verify", post(handlers::verify_backup))
         .route(
-            "/backup/:name",
+            "/backup/{name}",
             get(handlers::get_backup).delete(handlers::delete_backup),
         )
-        .route("/backup/:name/restore", post(handlers::restore_backup))
+        .route("/backup/{name}/restore", post(handlers::restore_backup))
         // User feedback
         .route(
             "/feedback",
             get(handlers::list_feedback).post(handlers::create_feedback),
         )
         .route("/feedback/stats", get(handlers::get_feedback_stats))
-        .route("/feedback/:id", get(handlers::get_feedback))
-        .route("/feedback/:id/revert", post(handlers::revert_feedback))
-        .route("/feedback/:id/unrevert", post(handlers::unrevert_feedback))
+        .route("/feedback/{id}", get(handlers::get_feedback))
+        .route("/feedback/{id}/revert", post(handlers::revert_feedback))
+        .route("/feedback/{id}/unrevert", post(handlers::unrevert_feedback))
         // Alert feedback (convenience endpoints)
         .route(
-            "/alerts/:id/feedback",
+            "/alerts/{id}/feedback",
             get(handlers::get_alert_feedback).post(handlers::rate_alert),
         )
         // Training data and pipeline
@@ -873,7 +882,7 @@ pub fn create_router_with_options(
         .route("/explore/models", get(handlers::list_explore_models))
         .route("/explore/session", post(handlers::create_explore_session))
         .route(
-            "/explore/session/:id",
+            "/explore/session/{id}",
             get(handlers::get_explore_session).delete(handlers::delete_explore_session),
         );
 

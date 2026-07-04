@@ -36,7 +36,7 @@ tokio = { version = "1.40", features = ["full"] }
 
 # Axum: Web framework built on hyper and tower. Used for the REST API server.
 # Features: macros (for route handlers), multipart (for file uploads)
-axum = { version = "0.7", features = ["macros", "multipart"] }
+axum = { version = "0.8", features = ["macros", "multipart"] }
 
 # Tower: Middleware abstractions for async services. Used for request handling
 # middleware like authentication, logging, and CORS.
