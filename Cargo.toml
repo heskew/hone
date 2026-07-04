@@ -189,7 +189,7 @@ dirs = "5.0"
 # - server: MCP server implementation
 # - macros: #[tool] and #[tool_router] derive macros
 # - transport-streamable-http-server: HTTP transport with SSE streaming
-rmcp = { version = "0.8", features = ["server", "macros", "transport-streamable-http-server"] }
+rmcp = { version = "2", features = ["server", "macros", "transport-streamable-http-server"] }
 
 # schemars: JSON Schema generation. Used by rmcp for tool parameter schemas.
 schemars = "1.0"

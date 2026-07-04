@@ -14,6 +14,7 @@ pub async fn cmd_serve(
     no_encrypt: bool,
     static_dir: Option<&Path>,
     mcp_port: Option<u16>,
+    mcp_allowed_hosts: Vec<String>,
 ) -> Result<()> {
     println!("🚀 Starting Hone web server...");
     println!("   Database: {}", db_path.display());
@@ -121,8 +122,11 @@ pub async fn cmd_serve(
     if let Some(mcp) = mcp_port {
         let mcp_db = db.clone();
         let mcp_host = host.to_string();
+        let mcp_hosts = mcp_allowed_hosts.clone();
         tokio::spawn(async move {
-            if let Err(e) = hone_server::mcp::start_mcp_server(mcp_db, &mcp_host, mcp).await {
+            if let Err(e) =
+                hone_server::mcp::start_mcp_server(mcp_db, &mcp_host, mcp, &mcp_hosts).await
+            {
                 eprintln!("MCP server error: {}", e);
             }
         });

@@ -64,6 +64,7 @@ async fn main() -> Result<()> {
             no_auth,
             static_dir,
             mcp_port,
+            mcp_allowed_hosts,
         } => {
             commands::cmd_serve(
                 &cli.db,
@@ -73,6 +74,7 @@ async fn main() -> Result<()> {
                 cli.no_encrypt,
                 static_dir.as_deref(),
                 mcp_port,
+                mcp_allowed_hosts,
             )
             .await
         }
