@@ -31,9 +31,7 @@ use std::sync::Arc;
 
 use rmcp::{
     handler::server::router::tool::ToolRouter,
-    model::{
-        CallToolResult, Content, Implementation, ProtocolVersion, ServerCapabilities, ServerInfo,
-    },
+    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use tokio::sync::Mutex;
@@ -70,23 +68,20 @@ impl HoneMcpServer {
 #[tool_handler]
 impl ServerHandler for HoneMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            protocol_version: ProtocolVersion::V_2025_03_26,
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            server_info: Implementation {
-                name: "hone".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-                title: Some("Hone Personal Finance".to_string()),
-                website_url: Some("https://github.com/heskew/hone".to_string()),
-                icons: None,
-            },
-            instructions: Some(
-                "Hone is a personal finance tool for tracking spending, subscriptions, and waste. \
-                 Use the available tools to query transactions, analyze spending patterns, \
-                 check subscriptions, and identify potential savings."
-                    .to_string(),
-            ),
-        }
+        // rmcp 2.x marks these structs non_exhaustive, so build via constructors
+        let mut server_info = Implementation::new("hone", env!("CARGO_PKG_VERSION"));
+        server_info.title = Some("Hone Personal Finance".to_string());
+        server_info.website_url = Some("https://github.com/heskew/hone".to_string());
+
+        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+        info.server_info = server_info;
+        info.instructions = Some(
+            "Hone is a personal finance tool for tracking spending, subscriptions, and waste. \
+             Use the available tools to query transactions, analyze spending patterns, \
+             check subscriptions, and identify potential savings."
+                .to_string(),
+        );
+        info
     }
 }
 
@@ -101,7 +96,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = SearchTransactionsParams::default();
         match tools::search_transactions(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -116,7 +111,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = SpendingSummaryParams::default();
         match tools::get_spending_summary(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -131,7 +126,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = SubscriptionsParams::default();
         match tools::get_subscriptions(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -146,7 +141,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = AlertsParams::default();
         match tools::get_alerts(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -161,7 +156,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = CompareSpendingParams::default();
         match tools::compare_spending(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -176,7 +171,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = MerchantsParams::default();
         match tools::get_merchants(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -189,7 +184,7 @@ impl HoneMcpServer {
         let db = self.db().await;
         let params = AccountSummaryParams::default();
         match tools::get_account_summary(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![Content::text(
+            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
                 serde_json::to_string_pretty(&result).unwrap_or_default(),
             )])),
             Err(e) => Err(McpError::internal_error(e.to_string(), None)),
@@ -198,16 +193,39 @@ impl HoneMcpServer {
 }
 
 /// Start the MCP server on the given port
-pub async fn start_mcp_server(db: Database, host: &str, port: u16) -> anyhow::Result<()> {
+///
+/// `extra_allowed_hosts` extends rmcp's loopback-only Host allowlist, which
+/// exists to block DNS rebinding (RUSTSEC-2026-0189). Non-loopback clients
+/// (e.g. LAN access via a hostname) are rejected with 403 unless their
+/// authority is listed here.
+pub async fn start_mcp_server(
+    db: Database,
+    host: &str,
+    port: u16,
+    extra_allowed_hosts: &[String],
+) -> anyhow::Result<()> {
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
-    use rmcp::transport::streamable_http_server::StreamableHttpService;
+    use rmcp::transport::streamable_http_server::{
+        StreamableHttpServerConfig, StreamableHttpService,
+    };
 
     info!("Starting MCP server at http://{}:{}/mcp", host, port);
+
+    let mut config = StreamableHttpServerConfig::default();
+    config
+        .allowed_hosts
+        .extend(extra_allowed_hosts.iter().cloned());
+    if !extra_allowed_hosts.is_empty() {
+        info!(
+            "MCP server allowing additional hosts: {}",
+            extra_allowed_hosts.join(", ")
+        );
+    }
 
     let service = StreamableHttpService::new(
         move || Ok(HoneMcpServer::new(db.clone())),
         LocalSessionManager::default().into(),
-        Default::default(),
+        config,
     );
 
     let router = axum::Router::new().nest_service("/mcp", service);

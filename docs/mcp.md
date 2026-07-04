@@ -38,13 +38,17 @@ On your Raspberry Pi (or wherever Hone runs):
 
 ```bash
 # Start with MCP on port 3001
-hone serve --port 3000 --mcp-port 3001 --host 0.0.0.0
+# --mcp-allowed-hosts is needed for access from other machines: the MCP
+# server only accepts loopback Host headers by default (DNS rebinding
+# protection), so list the hostname/IP clients will use to reach it
+hone serve --port 3000 --mcp-port 3001 --host 0.0.0.0 --mcp-allowed-hosts pi-hostname
 
 # Or with all your usual options
 hone serve \
   --port 3000 \
   --mcp-port 3001 \
   --host 0.0.0.0 \
+  --mcp-allowed-hosts pi-hostname,192.168.1.50 \
   --static-dir /path/to/ui/dist
 ```
 

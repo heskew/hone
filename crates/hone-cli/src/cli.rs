@@ -96,6 +96,14 @@ pub enum Commands {
         /// Example: --mcp-port 3001
         #[arg(long)]
         mcp_port: Option<u16>,
+
+        /// Additional Host header values the MCP server accepts (comma-separated)
+        ///
+        /// The MCP server only accepts loopback hosts by default to block DNS
+        /// rebinding attacks. For LAN access, list the hostnames or host:port
+        /// authorities clients will use. Example: --mcp-allowed-hosts pi-hostname
+        #[arg(long, value_delimiter = ',')]
+        mcp_allowed_hosts: Vec<String>,
     },
 
     /// Show dashboard summary
