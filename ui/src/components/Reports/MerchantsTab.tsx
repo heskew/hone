@@ -114,7 +114,7 @@ export function MerchantsTab({ periodParams, filterParams }: { periodParams: Per
                 }}
               />
               <Tooltip
-                formatter={(value: number) => [`$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Amount"]}
+                formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Amount"]}
                 labelFormatter={(label) => chartData.find((d) => d.name === label)?.fullName || label}
                 contentStyle={{
                   backgroundColor: "var(--color-hone-800)",
