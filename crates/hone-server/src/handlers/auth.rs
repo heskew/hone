@@ -17,11 +17,14 @@ pub struct MeResponse {
 }
 
 /// Get the currently authenticated user
-pub async fn get_me(
-    State(state): State<Arc<AppState>>,
-    connect_info: Option<axum::extract::ConnectInfo<std::net::SocketAddr>>,
-    request: Request,
-) -> Json<MeResponse> {
+pub async fn get_me(State(state): State<Arc<AppState>>, request: Request) -> Json<MeResponse> {
+    // axum 0.8 removed the blanket Option<T> extractor; read ConnectInfo from
+    // extensions so the handler still works when the router is built without
+    // into_make_service_with_connect_info (as in tests)
+    let connect_info = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .copied();
     let headers = request.headers();
     let header_user = get_user_email(headers);
 
