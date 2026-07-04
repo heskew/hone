@@ -322,7 +322,7 @@ export function SpendingTab({ periodParams, filterParams }: { periodParams: Peri
               <XAxis type="number" tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fill: "var(--color-hone-400)" }} />
               <YAxis type="category" dataKey="name" width={80} tick={{ fill: "var(--color-hone-300)" }} />
               <Tooltip
-                formatter={(value: number) => [`$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Amount"]}
+                formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Amount"]}
                 contentStyle={{
                   backgroundColor: "var(--color-hone-800)",
                   border: "1px solid var(--color-hone-700)",

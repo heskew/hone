@@ -126,7 +126,7 @@ export function TrendsTab({ periodParams, filterParams }: { periodParams: Period
               <XAxis dataKey="period" tick={{ fill: "var(--color-hone-300)" }} />
               <YAxis tickFormatter={(v) => `$${v.toLocaleString()}`} tick={{ fill: "var(--color-hone-400)" }} />
               <Tooltip
-                formatter={(value: number) => [`$${value.toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Spending"]}
+                formatter={(value) => [`$${Number(value).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, "Spending"]}
                 contentStyle={{
                   backgroundColor: "var(--color-hone-800)",
                   border: "1px solid var(--color-hone-700)",
