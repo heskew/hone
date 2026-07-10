@@ -18,10 +18,10 @@
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "lucide-react": "^1.23.0",
+    "lucide-react": "^1.24.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "recharts": "^3.9.1"
+    "recharts": "^3.9.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
@@ -32,7 +32,7 @@
     "@vitejs/plugin-react": "^5.1.2",
     "autoprefixer": "^10.5.2",
     "dprint": "^0.55.1",
-    "oxlint": "^1.72.0",
+    "oxlint": "^1.73.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.1.18",
     "typescript": "^6.0.3",
