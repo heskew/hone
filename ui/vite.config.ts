@@ -31,12 +31,24 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
-    rollupOptions: {
+    // Vite 8 / Rolldown dropped object-form manualChunks; codeSplitting is the replacement.
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-charts': ['recharts'],
-          'vendor-icons': ['lucide-react'],
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /[\\/]node_modules[\\/](?:react|react-dom)(?:[\\/]|$)/,
+            },
+            {
+              name: 'vendor-charts',
+              test: /[\\/]node_modules[\\/]recharts(?:[\\/]|$)/,
+            },
+            {
+              name: 'vendor-icons',
+              test: /[\\/]node_modules[\\/]lucide-react(?:[\\/]|$)/,
+            },
+          ],
         },
       },
     },
