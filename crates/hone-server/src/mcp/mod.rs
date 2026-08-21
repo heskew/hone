@@ -29,15 +29,18 @@ mod tools;
 
 use std::sync::Arc;
 
+use axum::middleware;
 use rmcp::{
     handler::server::router::tool::ToolRouter,
     model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use tokio::sync::Mutex;
-use tracing::info;
+use tracing::{info, warn};
 
 use hone_core::db::Database;
+
+use crate::{auth_middleware, ServerConfig};
 
 pub use tools::*;
 
@@ -192,43 +195,69 @@ impl HoneMcpServer {
     }
 }
 
-/// Start the MCP server on the given port
+/// Build the MCP HTTP router, gated by the same auth as `/api`.
 ///
 /// `extra_allowed_hosts` extends rmcp's loopback-only Host allowlist, which
-/// exists to block DNS rebinding (RUSTSEC-2026-0189). Non-loopback clients
-/// (e.g. LAN access via a hostname) are rejected with 403 unless their
-/// authority is listed here.
-pub async fn start_mcp_server(
+/// exists to block DNS rebinding (RUSTSEC-2026-0189). That allowlist is not
+/// authentication: when `config.require_auth` is true, requests still need
+/// API credentials (or a trusted-network match).
+pub(crate) fn create_mcp_router(
     db: Database,
-    host: &str,
-    port: u16,
     extra_allowed_hosts: &[String],
-) -> anyhow::Result<()> {
+    config: ServerConfig,
+) -> axum::Router {
     use rmcp::transport::streamable_http_server::session::local::LocalSessionManager;
     use rmcp::transport::streamable_http_server::{
         StreamableHttpServerConfig, StreamableHttpService,
     };
 
-    info!("Starting MCP server at http://{}:{}/mcp", host, port);
-
-    let mut config = StreamableHttpServerConfig::default();
-    config
+    let mut http_config = StreamableHttpServerConfig::default();
+    http_config
         .allowed_hosts
         .extend(extra_allowed_hosts.iter().cloned());
+
+    let service = StreamableHttpService::new(
+        move || Ok(HoneMcpServer::new(db.clone())),
+        LocalSessionManager::default().into(),
+        http_config,
+    );
+
+    axum::Router::new()
+        .nest_service("/mcp", service)
+        .layer(middleware::from_fn_with_state(
+            Arc::new(config),
+            auth_middleware,
+        ))
+}
+
+/// Start the MCP server on the given port
+///
+/// `extra_allowed_hosts` extends rmcp's loopback-only Host allowlist, which
+/// exists to block DNS rebinding (RUSTSEC-2026-0189). Non-loopback clients
+/// (e.g. LAN access via a hostname) are rejected with 403 unless their
+/// authority is listed here. The Host allowlist is not a substitute for
+/// `ServerConfig` authentication.
+pub async fn start_mcp_server(
+    db: Database,
+    host: &str,
+    port: u16,
+    extra_allowed_hosts: &[String],
+    config: ServerConfig,
+) -> anyhow::Result<()> {
+    info!("Starting MCP server at http://{}:{}/mcp", host, port);
+
     if !extra_allowed_hosts.is_empty() {
         info!(
             "MCP server allowing additional hosts: {}",
             extra_allowed_hosts.join(", ")
         );
     }
+    if !config.require_auth {
+        warn!("⚠️  MCP authentication disabled - do not expose to network!");
+    }
 
-    let service = StreamableHttpService::new(
-        move || Ok(HoneMcpServer::new(db.clone())),
-        LocalSessionManager::default().into(),
-        config,
-    );
-
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = create_mcp_router(db, extra_allowed_hosts, config)
+        .into_make_service_with_connect_info::<std::net::SocketAddr>();
     let addr = format!("{}:{}", host, port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
 
@@ -242,4 +271,116 @@ pub async fn start_mcp_server(
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    fn mcp_json_request() -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_rejects_unauthenticated_requests_when_auth_required() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(mcp_json_request()).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn mcp_host_allowlist_is_not_authentication() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &["pi-hostname".to_string()], config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header("host", "pi-hostname")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn mcp_accepts_api_key_when_auth_required() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            api_keys: vec!["test-mcp-key".to_string()],
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/mcp")
+                    .header("content-type", "application/json")
+                    .header("authorization", "Bearer test-mcp-key")
+                    .body(Body::from(
+                        r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "valid API key must pass the same auth gate as /api"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_allows_unauthenticated_when_no_auth() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: false,
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(mcp_json_request()).await.unwrap();
+
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "--no-auth must leave MCP open, consistent with the API"
+        );
+    }
 }

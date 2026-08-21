@@ -38,9 +38,11 @@ On your Raspberry Pi (or wherever Hone runs):
 
 ```bash
 # Start with MCP on port 3001
+# MCP uses the same auth as /api (HONE_API_KEYS, CF Access, or trusted networks).
 # --mcp-allowed-hosts is needed for access from other machines: the MCP
 # server only accepts loopback Host headers by default (DNS rebinding
 # protection), so list the hostname/IP clients will use to reach it
+export HONE_API_KEYS=your-generated-key
 hone serve --port 3000 --mcp-port 3001 --host 0.0.0.0 --mcp-allowed-hosts pi-hostname
 
 # Or with all your usual options
@@ -65,14 +67,16 @@ You should see:
 The MCP server exposes a JSON-RPC endpoint. You can call it directly from any HTTP client or custom agent:
 
 ```bash
-# List available tools
+# List available tools (same credentials as the REST API)
 curl http://pi-hostname:3001/mcp -X POST \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $HONE_API_KEY" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
 # Call a tool
 curl http://pi-hostname:3001/mcp -X POST \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $HONE_API_KEY" \
   -d '{
     "jsonrpc":"2.0",
     "id":2,
@@ -83,6 +87,8 @@ curl http://pi-hostname:3001/mcp -X POST \
     }
   }'
 ```
+
+When auth is required (the default), unauthenticated requests to `/mcp` receive `401`. Use `--no-auth` only for local development.
 
 ## Available Tools
 
@@ -178,6 +184,7 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/hone
 Environment=HONE_DB_KEY=your-encryption-key
+Environment=HONE_API_KEYS=your-generated-key
 Environment=OLLAMA_HOST=http://192.168.1.100:11434
 Environment=OLLAMA_MODEL=llama3.2
 ExecStart=/home/pi/hone/hone serve \
@@ -201,26 +208,31 @@ Once running, query the MCP endpoint from any HTTP client on your network:
 ```bash
 curl http://192.168.1.50:3001/mcp -X POST \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-generated-key" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_spending_summary","arguments":{"period":"this-month"}}}'
 ```
 
 ## Security Considerations
 
+### Authentication
+
+MCP uses the same `auth_middleware` as `/api`. When auth is required (the default), `/mcp` is not reachable without credentials. Accepted credentials are the same as the REST API:
+
+- `Authorization: Bearer <key>` (`HONE_API_KEYS`)
+- Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) or user header
+- A client IP in `HONE_TRUSTED_NETWORKS`
+
+`--no-auth` leaves both the API and MCP open, consistent with the REST API. Use that only for local development.
+
+`--mcp-allowed-hosts` is a Host-header allowlist for DNS-rebinding protection. It is not authentication: listing a hostname does not grant access.
+
 ### Network Isolation
 
-The MCP server binds to the host you specify:
+The MCP server binds to the same `--host` as the API:
 - `--host 127.0.0.1` — Only local connections (default)
 - `--host 0.0.0.0` — All network interfaces (for LAN access)
 
-For homelab use, `0.0.0.0` is fine since your network is trusted. Do NOT expose to the internet.
-
-### Authentication
-
-The MCP server currently shares the same authentication config as the main API:
-- If `--no-auth` is set, MCP is unauthenticated (fine for home network)
-- If auth is enabled, MCP requests need the same credentials
-
-For home use with a private network, `--no-auth` is reasonable. The MCP tools are read-only — they can't modify your data.
+Do NOT expose `--mcp-port` to the internet. Even on a private LAN, prefer API keys or trusted networks over `--no-auth`.
 
 ### Firewall
 
@@ -241,7 +253,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 3001
 
 ### "No tools available" in Claude Desktop
 
-1. Check the MCP endpoint is reachable: `curl http://pi:3001/mcp`
+1. Check the MCP endpoint is reachable: `curl -H "Authorization: Bearer $HONE_API_KEY" http://pi:3001/mcp`
 2. Verify config file syntax (JSON must be valid)
 3. Restart Claude Desktop completely
 
@@ -267,10 +279,11 @@ import httpx
 import json
 
 MCP_URL = "http://192.168.1.50:3001/mcp"
+MCP_HEADERS = {"Authorization": "Bearer your-generated-key"}
 
 def call_tool(name: str, args: dict) -> dict:
     """Call an MCP tool and return the result."""
-    response = httpx.post(MCP_URL, json={
+    response = httpx.post(MCP_URL, headers=MCP_HEADERS, json={
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
@@ -293,5 +306,4 @@ Integrate this with your Ollama agent's tool-calling capability for a fully loca
 The MCP server provides read-only access. Future enhancements could include:
 - Write tools (mark subscription as cancelled, dismiss alert)
 - Streaming for large result sets
-- Authentication tokens for MCP specifically
 - WebSocket transport for real-time updates
