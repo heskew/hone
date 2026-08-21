@@ -45,6 +45,7 @@ See `docs/deployment.md` for details:
 - API keys for machine-to-machine auth (`HONE_API_KEYS`)
 - Trusted networks for local access without auth (`HONE_TRUSTED_NETWORKS`)
 - Trusted proxies for extracting real client IP (`HONE_TRUSTED_PROXIES`)
+- MCP (`--mcp-port`) uses the same `auth_middleware` as `/api`; `--no-auth` leaves both open
 
 ## Tags System
 

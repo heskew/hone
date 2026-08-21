@@ -138,8 +138,8 @@ pub struct AppState {
 /// is exposed directly to the internet.
 ///
 /// **API keys**: Compared using constant-time comparison to prevent timing attacks.
-async fn auth_middleware(
-    State(state): State<Arc<AppState>>,
+pub(crate) async fn auth_middleware(
+    State(config): State<Arc<ServerConfig>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -150,36 +150,32 @@ async fn auth_middleware(
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .copied();
-    if !state.config.require_auth {
+    if !config.require_auth {
         return next.run(request).await;
     }
 
     // Check if request is from a trusted network
-    if !state.config.trusted_networks.is_empty() {
+    if !config.trusted_networks.is_empty() {
         let peer_ip = connect_info.as_ref().map(|ci| ci.0.ip());
         let xff = request
             .headers()
             .get("x-forwarded-for")
             .and_then(|v| v.to_str().ok());
-        let client_ip = get_client_ip(
-            &request,
-            connect_info.as_ref(),
-            &state.config.trusted_proxies,
-        );
+        let client_ip = get_client_ip(&request, connect_info.as_ref(), &config.trusted_proxies);
 
         // Debug logging for trusted network auth
         tracing::debug!(
             ?peer_ip,
             ?xff,
             ?client_ip,
-            trusted_proxies = ?state.config.trusted_proxies,
-            trusted_networks = ?state.config.trusted_networks,
+            trusted_proxies = ?config.trusted_proxies,
+            trusted_networks = ?config.trusted_networks,
             path = %request.uri().path(),
             "Checking trusted network auth"
         );
 
         if let Some(ip) = client_ip {
-            if is_ip_trusted(&ip, &state.config.trusted_networks) {
+            if is_ip_trusted(&ip, &config.trusted_networks) {
                 info!(ip = %ip, path = %request.uri().path(), "Authenticated via trusted network");
                 return next.run(request).await;
             }
@@ -187,13 +183,13 @@ async fn auth_middleware(
     }
 
     // Check for Cloudflare Access JWT first (cryptographic verification)
-    if state.config.cf_jwt.team_name.is_some() && state.config.cf_jwt.audience.is_some() {
+    if config.cf_jwt.team_name.is_some() && config.cf_jwt.audience.is_some() {
         if let Some(jwt) = request
             .headers()
             .get(CF_ACCESS_JWT_HEADER)
             .and_then(|v| v.to_str().ok())
         {
-            match validate_cf_jwt(jwt, &state.config.cf_jwt).await {
+            match validate_cf_jwt(jwt, &config.cf_jwt).await {
                 Ok(email) => {
                     info!(user = %email, path = %request.uri().path(), "Authenticated via Cloudflare JWT");
                     return next.run(request).await;
@@ -219,7 +215,7 @@ async fn auth_middleware(
 
     if let Some(email) = cf_user {
         // Warn if JWT config is set but we're falling back to header-only auth
-        if state.config.cf_jwt.team_name.is_some() {
+        if config.cf_jwt.team_name.is_some() {
             warn!(
                 user = %email,
                 path = %request.uri().path(),
@@ -238,7 +234,7 @@ async fn auth_middleware(
         .get(AUTHORIZATION_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(|auth| auth.strip_prefix("Bearer "))
-        .map(|key| validate_api_key(key, &state.config.api_keys))
+        .map(|key| validate_api_key(key, &config.api_keys))
         .unwrap_or(false);
 
     if api_key_valid {
@@ -926,7 +922,7 @@ pub fn create_router_with_options(
     let mut app = Router::new()
         .nest("/api", api_routes)
         .layer(middleware::from_fn_with_state(
-            state.clone(),
+            Arc::new(config),
             auth_middleware,
         ))
         .with_state(state)

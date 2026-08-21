@@ -58,6 +58,8 @@ Hone supports four authentication methods:
 3. **API Keys** - For internal services, use `Authorization: Bearer <key>` header
 4. **Trusted Networks** - Requests from configured IP addresses/subnets bypass auth
 
+The MCP server (`--mcp-port`) uses this same authentication. `--no-auth` leaves both `/api` and `/mcp` open.
+
 For local/development use, add `--no-auth` to the command:
 
 ```yaml

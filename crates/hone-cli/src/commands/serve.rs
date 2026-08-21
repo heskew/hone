@@ -69,7 +69,7 @@ pub async fn cmd_serve(
         }
         if !api_keys.is_empty() {
             println!(
-                "   🔑 API keys: {} configured (HONE_API_KEYS)",
+                "   🔑 API keys: {} configured (HONE_API_KEYS; API and MCP)",
                 api_keys.len()
             );
         }
@@ -118,14 +118,16 @@ pub async fn cmd_serve(
         trusted_proxies,
     };
 
-    // Start MCP server if port specified
+    // Start MCP server if port specified (same auth config as the REST API)
     if let Some(mcp) = mcp_port {
         let mcp_db = db.clone();
         let mcp_host = host.to_string();
         let mcp_hosts = mcp_allowed_hosts.clone();
+        let mcp_config = config.clone();
         tokio::spawn(async move {
             if let Err(e) =
-                hone_server::mcp::start_mcp_server(mcp_db, &mcp_host, mcp, &mcp_hosts).await
+                hone_server::mcp::start_mcp_server(mcp_db, &mcp_host, mcp, &mcp_hosts, mcp_config)
+                    .await
             {
                 eprintln!("MCP server error: {}", e);
             }
