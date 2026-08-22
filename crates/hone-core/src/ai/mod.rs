@@ -31,8 +31,11 @@
 //! - `OPENAI_COMPATIBLE_HOST`: Server URL (required for openai_compatible backend)
 //! - `OPENAI_COMPATIBLE_MODEL`: Model name (default: gpt-3.5-turbo)
 //! - `OPENAI_COMPATIBLE_API_KEY`: API key if required (optional)
+//! - `HONE_ALLOW_REMOTE_AI`: Set to `1`/`true`/`yes` to allow a non-local
+//!   `OLLAMA_HOST` or `ANTHROPIC_COMPATIBLE_HOST` (refused by default)
 
 pub mod anthropic_compat;
+pub mod host;
 mod mock;
 mod ollama;
 mod openai_compatible;
@@ -41,6 +44,10 @@ pub mod parsing;
 pub mod types;
 
 pub use anthropic_compat::{AnthropicCompatBackend, Message};
+pub use host::{
+    ensure_ai_host_allowed, ensure_configured_ai_hosts, is_local_ai_host, remote_ai_is_allowed,
+    AI_HOST_ENV_VARS, ALLOW_REMOTE_AI_ENV,
+};
 pub use mock::MockBackend;
 pub use ollama::OllamaBackend;
 pub use openai_compatible::OpenAICompatibleBackend;

@@ -114,8 +114,15 @@ impl OllamaBackend {
     }
 
     /// Create from environment variables
+    ///
+    /// Returns None if `OLLAMA_HOST` is unset or is a public host without
+    /// `HONE_ALLOW_REMOTE_AI`.
     pub fn from_env() -> Option<Self> {
         let host = std::env::var("OLLAMA_HOST").ok()?;
+        if let Err(e) = super::host::ensure_ai_host_allowed(&host) {
+            tracing::error!("{e}");
+            return None;
+        }
         let model = std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "llama3.2".to_string());
         Some(Self::new(&host, &model))
     }

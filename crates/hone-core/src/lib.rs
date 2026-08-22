@@ -34,10 +34,11 @@ pub mod training_pipeline;
 pub mod test_utils;
 
 pub use ai::{
+    ensure_ai_host_allowed, ensure_configured_ai_hosts, is_local_ai_host, remote_ai_is_allowed,
     AIBackend, AIClient, AIOrchestrator, AnthropicCompatBackend, DuplicateAnalysis,
     MerchantClassification, MerchantContext, MockBackend, OllamaBackend, OpenAICompatibleBackend,
     ParsedReceipt, ParsedReceiptItem, ReceiptMatchEvaluation, RouterInfo, ServiceFeature,
-    SplitRecommendation, SubscriptionClassification,
+    SplitRecommendation, SubscriptionClassification, AI_HOST_ENV_VARS, ALLOW_REMOTE_AI_ENV,
 };
 pub use backup::{
     BackupDestination, BackupInfo, BackupResult, LocalDestination, PruneResult, RetentionPolicy,

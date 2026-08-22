@@ -17,6 +17,7 @@ pub async fn cmd_serve(
     mcp_allowed_hosts: Vec<String>,
 ) -> Result<()> {
     ensure_no_auth_allowed(host, no_auth)?;
+    ensure_ai_hosts_allowed()?;
 
     let static_dir = resolve_static_dir(
         static_dir,
@@ -105,6 +106,7 @@ pub async fn cmd_serve(
     if no_encrypt {
         println!("   ⚠️  Encryption DISABLED (--no-encrypt)");
     }
+    warn_if_remote_ai_hosts();
     println!();
     println!("   Press Ctrl+C to stop");
 
@@ -148,6 +150,34 @@ pub async fn cmd_serve(
     hone_server::serve_with_config(db, host, port, static_dir_str, config).await?;
 
     Ok(())
+}
+
+/// Public `OLLAMA_HOST` / `ANTHROPIC_COMPATIBLE_HOST` values send financial
+/// data off-LAN. Refuse them unless the user set `HONE_ALLOW_REMOTE_AI`.
+fn ensure_ai_hosts_allowed() -> Result<()> {
+    hone_core::ensure_configured_ai_hosts().map_err(|e| anyhow::anyhow!("{e}"))
+}
+
+/// After the refuse gate passes, warn if a remote host is in use via opt-in.
+fn warn_if_remote_ai_hosts() {
+    if !hone_core::remote_ai_is_allowed() {
+        return;
+    }
+    for var in hone_core::AI_HOST_ENV_VARS {
+        let Ok(url) = std::env::var(var) else {
+            continue;
+        };
+        let url = url.trim();
+        if url.is_empty() || hone_core::is_local_ai_host(url) {
+            continue;
+        }
+        println!();
+        println!(
+            "   ⚠️  {var} is a remote AI host ({url}). Financial data will be sent there \
+             because {allow}=1.",
+            allow = hone_core::ALLOW_REMOTE_AI_ENV
+        );
+    }
 }
 
 /// `--no-auth` skips `auth_middleware`. That is only safe when the process
@@ -320,6 +350,19 @@ mod tests {
                 "compose must not pass --no-auth on the published 0.0.0.0 bind: {line}"
             );
         }
+    }
+
+    #[test]
+    fn deployment_docs_mention_remote_ai_opt_in() {
+        let contents = read_repo_file("docs/deployment.md");
+        assert!(
+            contents.contains("HONE_ALLOW_REMOTE_AI"),
+            "deployment.md must document HONE_ALLOW_REMOTE_AI"
+        );
+        assert!(
+            contents.contains("ANTHROPIC_COMPATIBLE_HOST"),
+            "deployment.md must document ANTHROPIC_COMPATIBLE_HOST"
+        );
     }
 
     #[test]

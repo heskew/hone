@@ -263,8 +263,15 @@ impl AnthropicCompatBackend {
     }
 
     /// Create from environment (ANTHROPIC_COMPATIBLE_* - local Ollama only!)
+    ///
+    /// Returns None if `ANTHROPIC_COMPATIBLE_HOST` is unset or is a public
+    /// host without `HONE_ALLOW_REMOTE_AI`.
     pub fn from_env() -> Option<Self> {
         let base_url = std::env::var("ANTHROPIC_COMPATIBLE_HOST").ok()?;
+        if let Err(e) = super::host::ensure_ai_host_allowed(&base_url) {
+            tracing::error!("{e}");
+            return None;
+        }
         let model = std::env::var("ANTHROPIC_COMPATIBLE_MODEL")
             .unwrap_or_else(|_| "qwen3-coder".to_string());
         Some(Self::new(&base_url, &model))

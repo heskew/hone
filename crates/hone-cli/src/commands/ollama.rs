@@ -29,6 +29,7 @@ pub async fn cmd_ollama_test(
     println!("  Vision model: {}\n", vision);
 
     let host = host.unwrap_or_else(|_| "http://localhost:11434".to_string());
+    hone_core::ensure_ai_host_allowed(&host)?;
     let client = OllamaBackend::new(&host, &model);
 
     // Health check

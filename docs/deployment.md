@@ -41,8 +41,11 @@ Access Hone at http://localhost:3000
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `HONE_DB_KEY` | Yes | Database encryption passphrase |
-| `OLLAMA_HOST` | No | Ollama server URL for AI features |
+| `OLLAMA_HOST` | No | Local Ollama URL for classification (loopback / RFC1918 / `localhost` / `*.local` / Docker names; public URLs refused) |
 | `OLLAMA_MODEL` | No | Ollama model (default: gemma3) |
+| `ANTHROPIC_COMPATIBLE_HOST` | No | Local Ollama URL for Explore / agentic mode (same local-host rule as `OLLAMA_HOST`) |
+| `ANTHROPIC_COMPATIBLE_MODEL` | No | Tool-calling model for Explore / agentic mode |
+| `HONE_ALLOW_REMOTE_AI` | No | Set to `1` to allow a non-local `OLLAMA_HOST` or `ANTHROPIC_COMPATIBLE_HOST` (warns at startup) |
 | `CF_TEAM_NAME` | Recommended | Cloudflare team name for JWT validation |
 | `CF_AUD_TAG` | Recommended | Cloudflare Access application audience tag |
 | `HONE_API_KEYS` | No | Comma-separated API keys for internal service auth |
