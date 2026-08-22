@@ -140,25 +140,25 @@ fn is_local_hostname(host: &str) -> bool {
     if host.ends_with(".docker.internal") {
         return true;
     }
-    // Docker Compose / short LAN names (`ollama`, `mac`). Not all-numeric,
-    // hex IPv4 (`0x8080808`), or colon remnants from unbracketed IPv6 —
-    // those fail IpAddr parse but WHATWG/reqwest still treat them as IPs.
-    is_single_label_dns_name(&host)
+    // Docker Compose / short LAN names (`ollama`, `mac`, `ollama_gpu`).
+    // Not all-numeric, hex IPv4 (`0x8080808`), or colon remnants from
+    // unbracketed IPv6 — those fail IpAddr parse but WHATWG/reqwest
+    // still treat them as IPs.
+    is_single_label_local_name(&host)
 }
 
-/// DNS label that is safe to treat as a local short name.
+/// Short LAN / Compose name that is safe to treat as local.
 ///
-/// Rejects decimal IPv4 (`134744072`), hex IPv4 (`0x8080808`), and any
-/// colon-containing remnant so public addresses cannot sneak through as
-/// "no-dot, therefore LAN".
-fn is_single_label_dns_name(host: &str) -> bool {
+/// Underscores are allowed (Compose service names). Decimal IPv4
+/// (`134744072`), hex IPv4 (`0x8080808`), and colon remnants are not.
+fn is_single_label_local_name(host: &str) -> bool {
     if host.contains(':') || looks_like_integer_ipv4(host) {
         return false;
     }
-    is_dns_label(host)
+    is_local_short_label(host)
 }
 
-fn is_dns_label(host: &str) -> bool {
+fn is_local_short_label(host: &str) -> bool {
     let bytes = host.as_bytes();
     if bytes.is_empty() || bytes.len() > 63 {
         return false;
@@ -168,9 +168,10 @@ fn is_dns_label(host: &str) -> bool {
     if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
         return false;
     }
+    // DNS letters/digits/hyphen plus `_` for Compose service names.
     bytes
         .iter()
-        .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_')
 }
 
 fn looks_like_integer_ipv4(host: &str) -> bool {
@@ -309,6 +310,8 @@ mod tests {
             "http://ollama:11434",
             "http://mac",
             "http://hone-ai",
+            "http://ollama_gpu:11434",
+            "http://ollama_server",
             "http://host.docker.internal:11434",
             "http://gateway.docker.internal",
         ] {
