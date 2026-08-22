@@ -1,0 +1,21 @@
+# cargo-audit ignore list
+# Read automatically by `cargo audit` (GHCR security-scan-rust).
+#
+# Format (matches .trivyignore):
+#   # Description - reason for ignore
+#   # Added: YYYY-MM-DD | Status: does_not_apply / accepted / no_fix
+#   "RUSTSEC-YYYY-NNNN"
+
+[advisories]
+ignore = [
+    # Marvin Attack: RSA private-key recovery via timing sidechannels.
+    # Pulled only by jsonwebtoken 11 rust_crypto (rsa 0.9.10). No patched
+    # rsa release; jsonwebtoken 11.0.0 is current. Hone only verifies
+    # Cloudflare Access RS256 JWTs with CF public JWKs (aud/iss/exp/kid).
+    # Production never holds an RSA private key and never decrypts/signs
+    # under rsa, so the advisory does not apply. Tests mint tokens with a
+    # throwaway key. aws_lc_rs would drop rsa but is not a portable backend
+    # (#66). Revisit if Hone signs JWTs or rsa/jsonwebtoken ships a fix.
+    # Added: 2026-08-22 | Status: does_not_apply | Issue: #85
+    "RUSTSEC-2023-0071",
+]
