@@ -178,7 +178,7 @@ tempfile = "3.10"
 
 # dirs: Platform-specific directories. Used for finding data directory
 # (~/.local/share/hone on Linux/Mac) for prompts, config, and backups.
-dirs = "5.0"
+dirs = "6.0"
 
 # -----------------------------------------------------------------------------
 # MCP (Model Context Protocol)
