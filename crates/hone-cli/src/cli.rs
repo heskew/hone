@@ -78,10 +78,10 @@ pub enum Commands {
         #[arg(long, default_value = "127.0.0.1")]
         host: String,
 
-        /// Disable authentication (for local development only)
+        /// Disable authentication (loopback bind only)
         ///
-        /// WARNING: Do not use this flag when exposing the server to a network.
-        /// By default, the server requires Cloudflare Access authentication headers.
+        /// Only accepted when --host is 127.0.0.1, ::1, or localhost.
+        /// For LAN or Docker published ports, use HONE_API_KEYS or HONE_TRUSTED_NETWORKS.
         #[arg(long)]
         no_auth: bool,
 
@@ -93,7 +93,7 @@ pub enum Commands {
         ///
         /// When set, starts an MCP server for LLM tool access on the specified port.
         /// This enables conversational queries via Claude Desktop or other MCP clients.
-        /// MCP uses the same authentication as the REST API (`--no-auth` leaves both open).
+        /// MCP uses the same authentication as the REST API (`--no-auth` leaves both open on loopback).
         /// Example: --mcp-port 3001
         #[arg(long)]
         mcp_port: Option<u16>,
