@@ -148,7 +148,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # sha2: SHA-256 hashing. Used for transaction deduplication (import_hash)
 # and receipt content hashing.
-sha2 = "0.10"
+sha2 = "0.11"
 
 # hex: Hexadecimal encoding. Used for displaying hashes as readable strings.
 hex = "0.4"

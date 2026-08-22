@@ -30,6 +30,7 @@ tracing-subscriber.workspace = true # Log output formatting
 # Data processing
 chrono.workspace = true          # Date handling for reports
 sha2.workspace = true            # Hash verification
+hex.workspace = true             # Digest hex encoding
 serde_json.workspace = true      # JSON output formatting
 
 [dev-dependencies]
