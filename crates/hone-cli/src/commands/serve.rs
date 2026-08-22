@@ -47,6 +47,7 @@ pub async fn cmd_serve(
 
     let api_keys = parse_env_keys("HONE_API_KEYS");
     let mcp_keys = parse_env_keys("HONE_MCP_KEYS");
+    let mcp_oauth = load_mcp_oauth_config(host, mcp_port);
 
     // Parse Cloudflare Access JWT configuration
     let cf_team_name = std::env::var("CF_TEAM_NAME").ok().filter(|s| !s.is_empty());
@@ -79,8 +80,20 @@ pub async fn cmd_serve(
         }
         if !mcp_keys.is_empty() {
             println!(
-                "   🔑 MCP keys: {} configured (HONE_MCP_KEYS; /mcp only)",
+                "   🔑 MCP keys: {} configured (HONE_MCP_KEYS; opaque /mcp fallback)",
                 mcp_keys.len()
+            );
+        }
+        if let Some(resource) = mcp_oauth.resource.as_deref() {
+            println!("   🪪 MCP resource: {resource} (HONE_MCP_RESOURCE)");
+        }
+        if mcp_oauth.jwt_secret.is_some() {
+            println!("   🪪 MCP JWTs: HS256 (HONE_MCP_JWT_SECRET; aud = MCP resource)");
+        }
+        if mcp_oauth.jwks_url.is_some() {
+            println!(
+                "   🪪 MCP JWTs: JWKS {} (HONE_MCP_JWKS_URL)",
+                mcp_oauth.jwks_url.as_deref().unwrap_or("")
             );
         }
         if !trusted_networks.is_empty() {
@@ -121,6 +134,7 @@ pub async fn cmd_serve(
         allowed_origins: vec![],
         api_keys,
         mcp_keys,
+        mcp_oauth,
         cf_jwt: hone_server::CfJwtConfig {
             team_name: cf_team_name,
             audience: cf_aud_tag,
@@ -180,6 +194,76 @@ fn warn_if_remote_ai_hosts() {
             allow = hone_core::ALLOW_REMOTE_AI_ENV
         );
     }
+}
+
+fn load_mcp_oauth_config(host: &str, mcp_port: Option<u16>) -> hone_server::McpOAuthConfig {
+    let resource = std::env::var("HONE_MCP_RESOURCE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| mcp_port.map(|port| default_mcp_resource(host, port)));
+
+    if let (Some(port), Some(resource)) = (mcp_port, resource.as_deref()) {
+        if host == "0.0.0.0" || host == "::" {
+            if std::env::var("HONE_MCP_RESOURCE")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .is_none()
+            {
+                println!(
+                    "   ⚠️  HONE_MCP_RESOURCE unset; advertised MCP resource is {resource}. \
+                     Set it to the URI clients use (e.g. http://pi:{port}/mcp)."
+                );
+            }
+        }
+    }
+
+    hone_server::McpOAuthConfig {
+        resource,
+        authorization_servers: parse_env_keys("HONE_MCP_AUTHORIZATION_SERVERS"),
+        jwt_secret: std::env::var("HONE_MCP_JWT_SECRET")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        issuer: std::env::var("HONE_MCP_ISSUER")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+        jwks_url: std::env::var("HONE_MCP_JWKS_URL")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()),
+    }
+}
+
+/// Fallback resource URI when `HONE_MCP_RESOURCE` is unset. `0.0.0.0` / `::`
+/// are bind addresses, not client-reachable hosts.
+fn default_mcp_resource(host: &str, port: u16) -> String {
+    let host = match host {
+        "0.0.0.0" | "::" => "127.0.0.1",
+        "::1" => "[::1]",
+        other => other,
+    };
+    format!("http://{host}:{port}/mcp")
+}
+
+/// Mint a local MCP-audience JWT (not an OAuth token endpoint).
+pub fn cmd_mcp_token(ttl: u64) -> Result<()> {
+    let secret = std::env::var("HONE_MCP_JWT_SECRET")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .context("HONE_MCP_JWT_SECRET is required to mint an MCP token")?;
+    let resource = std::env::var("HONE_MCP_RESOURCE")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .context(
+            "HONE_MCP_RESOURCE is required (canonical MCP URI, e.g. http://127.0.0.1:3001/mcp)",
+        )?;
+    let token = hone_server::mint_mcp_access_token(&secret, &resource, ttl)?;
+    println!("{token}");
+    Ok(())
 }
 
 /// Parse comma-separated Bearer keys from an environment variable.
@@ -251,6 +335,22 @@ fn resolve_static_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_mcp_resource_rewrites_wildcard_binds() {
+        assert_eq!(
+            default_mcp_resource("0.0.0.0", 3001),
+            "http://127.0.0.1:3001/mcp"
+        );
+        assert_eq!(
+            default_mcp_resource("127.0.0.1", 3001),
+            "http://127.0.0.1:3001/mcp"
+        );
+        assert_eq!(
+            default_mcp_resource("pi-hostname", 3001),
+            "http://pi-hostname:3001/mcp"
+        );
+    }
 
     #[test]
     fn parse_comma_separated_keys_trims_and_skips_empty() {
@@ -392,18 +492,30 @@ mod tests {
             contents.contains("HONE_MCP_KEYS"),
             "deployment.md must document HONE_MCP_KEYS"
         );
+        assert!(
+            contents.contains("HONE_MCP_JWT_SECRET"),
+            "deployment.md must document HONE_MCP_JWT_SECRET"
+        );
+        assert!(
+            contents.contains("HONE_MCP_RESOURCE"),
+            "deployment.md must document HONE_MCP_RESOURCE"
+        );
     }
 
     #[test]
     fn mcp_docs_mention_scoped_keys() {
         let contents = read_repo_file("docs/mcp.md");
         assert!(
-            contents.contains("HONE_MCP_KEYS"),
-            "mcp.md must document HONE_MCP_KEYS"
+            contents.contains("HONE_MCP_JWT_SECRET"),
+            "mcp.md must document HONE_MCP_JWT_SECRET"
+        );
+        assert!(
+            contents.contains("oauth-protected-resource"),
+            "mcp.md must document RFC 9728 well-known metadata"
         );
         assert!(
             contents.contains("rejected on `/api`"),
-            "mcp.md must say MCP keys are rejected on /api"
+            "mcp.md must say MCP tokens are rejected on /api"
         );
     }
 

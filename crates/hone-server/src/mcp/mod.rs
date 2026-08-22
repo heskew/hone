@@ -25,11 +25,12 @@
 //! - `get_merchants` - Top merchants by spending
 //! - `get_account_summary` - Account balances and activity
 
+pub(crate) mod oauth;
 mod tools;
 
 use std::sync::Arc;
 
-use axum::middleware;
+use axum::{http::header, middleware, routing::get, Json};
 use rmcp::{
     handler::server::router::tool::ToolRouter,
     handler::server::wrapper::Parameters,
@@ -45,6 +46,7 @@ use hone_core::Error as CoreError;
 
 use crate::{auth_middleware, ServerConfig};
 
+pub use oauth::{mint_mcp_access_token, McpOAuthConfig, MCP_READ_SCOPE};
 pub use tools::*;
 
 /// Hone MCP Server state
@@ -215,12 +217,51 @@ pub(crate) fn create_mcp_router(
         http_config,
     );
 
-    axum::Router::new()
-        .nest_service("/mcp", service)
-        .layer(middleware::from_fn_with_state(
-            Arc::new(config),
-            auth_middleware,
-        ))
+    // RFC 9728 metadata is public. Auth wraps `/mcp` only so a 401 challenge
+    // can point clients at these well-known URLs (2026-07-28). Snapshot the
+    // document at startup so this router stays `Router<()>` and merges with
+    // the authenticated `/mcp` nest.
+    let metadata = oauth::protected_resource_metadata(&config);
+    let well_known = axum::Router::new()
+        .route(
+            "/.well-known/oauth-protected-resource",
+            get({
+                let metadata = metadata.clone();
+                move || {
+                    let metadata = metadata.clone();
+                    async move { prm_response(metadata) }
+                }
+            }),
+        )
+        .route(
+            "/.well-known/oauth-protected-resource/mcp",
+            get({
+                let metadata = metadata.clone();
+                move || {
+                    let metadata = metadata.clone();
+                    async move { prm_response(metadata) }
+                }
+            }),
+        );
+
+    let protected =
+        axum::Router::new()
+            .nest_service("/mcp", service)
+            .layer(middleware::from_fn_with_state(
+                Arc::new(config),
+                auth_middleware,
+            ));
+
+    well_known.merge(protected)
+}
+
+fn prm_response(
+    metadata: serde_json::Value,
+) -> (
+    [(header::HeaderName, &'static str); 1],
+    Json<serde_json::Value>,
+) {
+    ([(header::CACHE_CONTROL, "max-age=3600")], Json(metadata))
 }
 
 /// Start the MCP server on the given port
@@ -470,6 +511,155 @@ mod tests {
             response.status(),
             StatusCode::OK,
             "HONE_API_KEYS must still open /api"
+        );
+    }
+
+    fn mcp_oauth_config() -> crate::McpOAuthConfig {
+        crate::McpOAuthConfig {
+            resource: Some("http://127.0.0.1:3001/mcp".to_string()),
+            jwt_secret: Some("test-mcp-jwt-secret".to_string()),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn mcp_401_includes_www_authenticate_resource_metadata() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_oauth: mcp_oauth_config(),
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(mcp_json_request()).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        let challenge = response
+            .headers()
+            .get("www-authenticate")
+            .and_then(|v| v.to_str().ok())
+            .expect("401 must include WWW-Authenticate");
+        assert!(
+            challenge.contains("resource_metadata="),
+            "challenge should point at RFC 9728 metadata: {challenge}"
+        );
+        assert!(challenge.contains("scope=\"mcp:read\""), "{challenge}");
+    }
+
+    #[tokio::test]
+    async fn mcp_protected_resource_metadata_is_public() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_oauth: mcp_oauth_config(),
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/.well-known/oauth-protected-resource")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["resource"], "http://127.0.0.1:3001/mcp");
+        assert_eq!(json["scopes_supported"][0], "mcp:read");
+        assert!(json.get("authorization_servers").is_none());
+    }
+
+    #[tokio::test]
+    async fn mcp_audience_jwt_accepted_on_mcp() {
+        let db = Database::in_memory().unwrap();
+        let mcp_oauth = mcp_oauth_config();
+        let token = mint_mcp_access_token(
+            mcp_oauth.jwt_secret.as_deref().unwrap(),
+            mcp_oauth.resource.as_deref().unwrap(),
+            60,
+        )
+        .unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_oauth,
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(bearer_mcp_request(&token)).await.unwrap();
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "MCP-audience JWT must be accepted on /mcp"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_audience_jwt_rejected_on_mcp() {
+        let db = Database::in_memory().unwrap();
+        let mcp_oauth = mcp_oauth_config();
+        let token = mint_mcp_access_token(
+            mcp_oauth.jwt_secret.as_deref().unwrap(),
+            "http://127.0.0.1:3000/api",
+            60,
+        )
+        .unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_oauth,
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(bearer_mcp_request(&token)).await.unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "token bound to the API resource must not open /mcp"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_audience_jwt_rejected_on_api() {
+        let db = Database::in_memory().unwrap();
+        db.seed_root_tags().unwrap();
+        let mcp_oauth = mcp_oauth_config();
+        let token = mint_mcp_access_token(
+            mcp_oauth.jwt_secret.as_deref().unwrap(),
+            mcp_oauth.resource.as_deref().unwrap(),
+            60,
+        )
+        .unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_oauth,
+            api_keys: vec!["api-only-token".to_string()],
+            ..Default::default()
+        };
+        let app = crate::create_router(db, None, config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tags")
+                    .header("authorization", format!("Bearer {token}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "MCP-audience JWT must not open /api"
         );
     }
 
