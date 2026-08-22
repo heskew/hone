@@ -88,7 +88,7 @@ curl http://pi-hostname:3001/mcp -X POST \
   }'
 ```
 
-When auth is required (the default), unauthenticated requests to `/mcp` receive `401`. Use `--no-auth` only for local development.
+When auth is required (the default), unauthenticated requests to `/mcp` receive `401`. `--no-auth` is accepted only on a loopback bind (`127.0.0.1`, `::1`, or `localhost`).
 
 ## Available Tools
 
@@ -222,7 +222,7 @@ MCP uses the same `auth_middleware` as `/api`. When auth is required (the defaul
 - Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) or user header
 - A client IP in `HONE_TRUSTED_NETWORKS`
 
-`--no-auth` leaves both the API and MCP open, consistent with the REST API. Use that only for local development.
+`--no-auth` leaves both the API and MCP open, consistent with the REST API. `serve` refuses that flag unless `--host` is loopback.
 
 `--mcp-allowed-hosts` is a Host-header allowlist for DNS-rebinding protection. It is not authentication: listing a hostname does not grant access.
 
@@ -232,7 +232,7 @@ The MCP server binds to the same `--host` as the API:
 - `--host 127.0.0.1` — Only local connections (default)
 - `--host 0.0.0.0` — All network interfaces (for LAN access)
 
-Do NOT expose `--mcp-port` to the internet. Even on a private LAN, prefer API keys or trusted networks over `--no-auth`.
+Do NOT expose `--mcp-port` to the internet. On a private LAN, use API keys or trusted networks; `--no-auth` is not accepted on a published bind.
 
 ### Firewall
 

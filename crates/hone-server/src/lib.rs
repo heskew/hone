@@ -3,7 +3,7 @@
 //! Axum-based REST API for the Hone personal finance application.
 //!
 //! Security features:
-//! - Cloudflare Access authentication (secure by default, use --no-auth for local dev)
+//! - Cloudflare Access authentication (secure by default; CLI `--no-auth` is loopback-only)
 //! - Restrictive CORS policy
 //! - Input validation (pagination limits, file size limits)
 //! - Full audit logging for all API access (reads and writes)

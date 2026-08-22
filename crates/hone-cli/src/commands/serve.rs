@@ -16,6 +16,8 @@ pub async fn cmd_serve(
     mcp_port: Option<u16>,
     mcp_allowed_hosts: Vec<String>,
 ) -> Result<()> {
+    ensure_no_auth_allowed(host, no_auth)?;
+
     println!("🚀 Starting Hone web server...");
     println!("   Database: {}", db_path.display());
     println!("   Listening: http://{}:{}", host, port);
@@ -141,6 +143,21 @@ pub async fn cmd_serve(
     Ok(())
 }
 
+/// `--no-auth` skips `auth_middleware`. That is only safe when the process
+/// cannot be reached from another machine, i.e. the bind host is loopback.
+/// Non-loopback binds (including `0.0.0.0` / `::` used for Docker published
+/// ports) must use Cloudflare Access, API keys, or trusted networks.
+fn ensure_no_auth_allowed(host: &str, no_auth: bool) -> Result<()> {
+    if no_auth && !is_loopback_host(host) {
+        anyhow::bail!(
+            "--no-auth is only allowed when binding to loopback \
+             (127.0.0.1, ::1, or localhost); refused for host '{host}'. \
+             For non-loopback binds, use HONE_API_KEYS or HONE_TRUSTED_NETWORKS."
+        );
+    }
+    Ok(())
+}
+
 /// Loopback inside a container is almost always a misconfiguration: the
 /// container's port mapping forwards to its external interface, so a server
 /// bound to 127.0.0.1 is unreachable from the host (issue #1).
@@ -177,5 +194,38 @@ mod tests {
         assert!(!is_loopback_host("::"));
         assert!(!is_loopback_host("192.168.1.10"));
         assert!(!is_loopback_host("example.internal"));
+    }
+
+    #[test]
+    fn no_auth_allowed_on_loopback() {
+        for host in ["127.0.0.1", "127.0.0.53", "localhost", "LOCALHOST", "::1"] {
+            ensure_no_auth_allowed(host, true)
+                .unwrap_or_else(|e| panic!("--no-auth should be allowed on {host}: {e}"));
+        }
+    }
+
+    #[test]
+    fn no_auth_rejected_on_non_loopback() {
+        for host in ["0.0.0.0", "::", "192.168.1.10", "example.internal"] {
+            let err = ensure_no_auth_allowed(host, true)
+                .expect_err(&format!("--no-auth must be refused on {host}"));
+            let msg = err.to_string();
+            assert!(
+                msg.contains(host),
+                "error should name the refused host {host}: {msg}"
+            );
+            assert!(
+                msg.contains("--no-auth"),
+                "error should name the flag: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn auth_enabled_allowed_on_any_host() {
+        for host in ["0.0.0.0", "::", "192.168.1.10", "127.0.0.1"] {
+            ensure_no_auth_allowed(host, false)
+                .unwrap_or_else(|e| panic!("auth-enabled serve should accept host {host}: {e}"));
+        }
     }
 }

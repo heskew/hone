@@ -46,7 +46,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 2. **Encryption required** - SQLCipher encryption by default (`HONE_DB_KEY`); `--no-encrypt` for dev
 3. **Local AI only** - Ollama and OpenAI-compatible servers. No cloud APIs
 4. **Deduplication** - SHA256 hash of (date, description, amount) prevents double-imports
-5. **Secure by default** - Cloudflare Access auth required; `--no-auth` for local dev
+5. **Secure by default** - Cloudflare Access auth required; `--no-auth` only on loopback
 6. **Audit logging** - All API access logged
 7. **Full processing by default** - Import runs tagging + detection automatically
 8. **Raw data preservation** - Original CSV data stored as JSON for reprocessing

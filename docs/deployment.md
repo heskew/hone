@@ -58,13 +58,9 @@ Hone supports four authentication methods:
 3. **API Keys** - For internal services, use `Authorization: Bearer <key>` header
 4. **Trusted Networks** - Requests from configured IP addresses/subnets bypass auth
 
-The MCP server (`--mcp-port`) uses this same authentication. `--no-auth` leaves both `/api` and `/mcp` open.
+The MCP server (`--mcp-port`) uses this same authentication. `--no-auth` leaves both `/api` and `/mcp` open, and is accepted only when the server binds to loopback (`127.0.0.1`, `::1`, or `localhost`).
 
-For local/development use, add `--no-auth` to the command:
-
-```yaml
-command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db", "--no-auth"]
-```
+Docker published ports must bind to `0.0.0.0` (or `::`) inside the container, so they cannot use `--no-auth`. Compose already omits that flag. For local Docker access without Cloudflare, set `HONE_TRUSTED_NETWORKS` or `HONE_API_KEYS` in `.env` (see Trusted Networks Setup and API Key Setup below).
 
 > **Keep `--host 0.0.0.0` when editing `command:`** — without it the server only
 > listens inside the container and the published port won't work. The startup log
@@ -103,11 +99,12 @@ CF headers. If you bypass Cloudflare, anyone can spoof these headers.
 - Behind Cloudflare Tunnel + Access without JWT validation (production, less secure)
 - Local network only + trusted networks (local browser access)
 - Local network only + API keys (internal services)
-- `--no-auth` on localhost only (development)
+- `--no-auth` on loopback only (`127.0.0.1`, `::1`, or `localhost`; development)
 
 **Unsafe configurations:**
 - Port forwarded to internet without Cloudflare
 - Exposed to untrusted networks with auth enabled but no Cloudflare
+- `--no-auth` with a non-loopback bind (refused at startup)
 
 ### API Key Setup
 
