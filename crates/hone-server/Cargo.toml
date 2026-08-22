@@ -12,7 +12,7 @@ hone-core = { path = "../hone-core" }    # Core library (db, import, detection)
 # Web framework
 axum.workspace = true            # HTTP routing and handlers
 tower.workspace = true           # Middleware framework
-tower-http.workspace = true      # CORS, static files, security headers
+tower-http.workspace = true      # CORS, static files, security headers, CSRF
 
 # Async runtime
 tokio.workspace = true           # Async runtime for server

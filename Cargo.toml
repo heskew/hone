@@ -43,9 +43,10 @@ axum = { version = "0.8", features = ["macros", "multipart"] }
 tower = "0.5"
 
 # Tower-HTTP: HTTP-specific middleware for tower. Provides CORS, static file
-# serving, request tracing, and security headers.
-# Features: cors, fs (static files), trace (logging), set-header (CSP, etc.)
-tower-http = { version = "0.7", features = ["cors", "fs", "trace", "set-header"] }
+# serving, request tracing, security headers, and CSRF (Go 1.25-style).
+# Features: cors, fs (static files), trace (logging), set-header (CSP, etc.),
+# csrf (Sec-Fetch-Site / Origin allow-list / Origin-Host fallback; no tokens)
+tower-http = { version = "0.7", features = ["cors", "fs", "trace", "set-header", "csrf"] }
 
 # -----------------------------------------------------------------------------
 # Database

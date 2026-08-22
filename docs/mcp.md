@@ -226,6 +226,8 @@ MCP uses the same `auth_middleware` as `/api`. When auth is required (the defaul
 
 `--mcp-allowed-hosts` is a Host-header allowlist for DNS-rebinding protection. It is not authentication: listing a hostname does not grant access.
 
+`CsrfLayer` wraps `/api` only. MCP tools are read-only and clients are non-browser (Bearer or trusted-net), so they are not subject to that check. See [Deployment — CSRF Protection](/deployment/#csrf-protection).
+
 ### Network Isolation
 
 The MCP server binds to the same `--host` as the API:
