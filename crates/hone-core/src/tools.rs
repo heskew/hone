@@ -744,12 +744,10 @@ pub fn get_merchants(db: &Database, params: MerchantsParams) -> Result<Merchants
 // get_account_summary
 // =============================================================================
 
+/// Account summary has no filters — counts always exclude archived transactions.
+/// `include_archived` was previously advertised but never applied.
 #[derive(Debug, Default, Deserialize, schemars::JsonSchema)]
-pub struct AccountSummaryParams {
-    /// Include archived transactions in counts (default: false)
-    #[schemars(description = "Include archived transactions in activity counts")]
-    pub include_archived: Option<bool>,
-}
+pub struct AccountSummaryParams {}
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
 pub struct AccountInfo {
