@@ -17,7 +17,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 
 - **hone-core**: Shared library
   - `db/` - SQLite with r2d2 pooling, SQLCipher encryption
-  - `backup/` - Pluggable backup system (local filesystem, R2 stub)
+  - `backup/` - Local filesystem backups (SQLCipher export + gzip)
   - `models.rs` - Domain types
   - `import.rs` - CSV parsers for major US banks
   - `export.rs` - Transaction CSV export, full JSON backup/restore
@@ -88,8 +88,6 @@ Key tables (see `docs/SPLITS_DESIGN.md` for entity/split schema):
 See `docs/FEATURES.md` for comprehensive feature list.
 
 **Test coverage**: 788 Rust tests, Playwright UX tests
-
-**Not yet implemented**: Cloud backup to Cloudflare R2 (stub ready)
 
 ## Detection Algorithms
 

@@ -9,7 +9,7 @@
 //! - Prompt library for customizable AI prompts
 //! - Context assembler for LLM prompt context
 //! - Tag assignment engine for automatic categorization
-//! - Backup system with pluggable destinations
+//! - Encrypted local filesystem backups
 
 pub mod ai;
 pub mod backup;

@@ -45,8 +45,8 @@ let key = argon2.hash_password(passphrase.as_bytes(), &salt)?;
 - Never log or expose the passphrase
 
 **Backup Encryption**:
-- Backups encrypted with `age` before upload to Cloudflare R2
-- Consider post-quantum algorithms for future-proofing (harvest now, decrypt later threat)
+- Backups inherit SQLCipher encryption from the source database (same `HONE_DB_KEY`)
+- Offsite copies use a mounted filesystem path, not a cloud upload
 
 ### A03:2021 - Injection
 - **SQL Injection** (Critical for hone-core/src/db.rs)
