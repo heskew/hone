@@ -53,6 +53,7 @@ jobs:
         run: cargo install cargo-audit --version 0.22.0 --locked
 
       - name: Rust dependency audit
+        # Advisory ignores (with justification) live in .cargo/audit.toml
         run: cargo audit
 
   security-scan-node:
