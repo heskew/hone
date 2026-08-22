@@ -1,14 +1,12 @@
-//! Backup system with pluggable destinations
+//! Local filesystem backup destination
 //!
-//! Supports staged backups:
-//! 1. Create encrypted, compressed local backup using SQLCipher export
-//! 2. Optionally upload to remote destinations (R2, S3, etc.)
+//! Creates encrypted, compressed backups using SQLCipher export and stores
+//! them on the local filesystem (including NAS/mounted paths).
 //!
 //! # Architecture
 //!
-//! - `BackupDestination` trait defines the interface for storage backends
+//! - `BackupDestination` trait defines the storage interface used by CLI/API
 //! - `LocalDestination` stores backups in a local directory
-//! - `R2Destination` uploads to Cloudflare R2 (future)
 //!
 //! # Backup Format
 //!
@@ -26,17 +24,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::Result;
 
 mod local;
-mod r2;
 
 pub use local::LocalDestination;
-pub use r2::{R2Config, R2Destination};
 
 /// Information about a backup
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupInfo {
     /// Backup filename
     pub name: String,
-    /// Full path or remote key
+    /// Full filesystem path
     pub path: String,
     /// Size in bytes
     pub size: u64,
@@ -108,24 +104,21 @@ impl RetentionPolicy {
 
 /// Trait for backup storage destinations
 ///
-/// Implementations handle storing backups in different locations:
-/// - Local filesystem
-/// - Cloudflare R2
-/// - AWS S3
-/// - etc.
+/// `LocalDestination` is the only implementation. Offsite copies use a
+/// mounted path (`HONE_BACKUP_DIR` / `--dir`), not a cloud backend.
 pub trait BackupDestination: Send + Sync {
     /// Human-readable name for this destination
     fn name(&self) -> &str;
 
     /// Store a backup file
     ///
-    /// Takes a local file path and stores it in the destination.
-    /// Returns the remote name/key for the backup.
+    /// Copies `local_path` into this destination under `backup_name`.
+    /// Returns the stored backup name.
     fn store(&self, local_path: &Path, backup_name: &str) -> Result<String>;
 
     /// Retrieve a backup file
     ///
-    /// Downloads/copies a backup to the specified local path.
+    /// Copies a backup from this destination to `local_path`.
     fn retrieve(&self, backup_name: &str, local_path: &Path) -> Result<()>;
 
     /// List all backups in this destination

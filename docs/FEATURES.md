@@ -78,7 +78,7 @@ See [backup.md](backup.md) for full details.
 
 - Encrypted, compressed backups using SQLCipher's `sqlcipher_export()`
 - Local filesystem storage (default: `~/.local/share/hone/backups/`)
-- Pluggable destinations via `BackupDestination` trait
+- Offsite via a mounted path (`HONE_BACKUP_DIR` / `--dir`), not a cloud backend
 - Retention policy with automatic pruning
 - Built-in scheduler in server (`HONE_BACKUP_SCHEDULE`)
 

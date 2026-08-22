@@ -20,7 +20,7 @@ impl Database {
     /// then compressed with gzip.
     ///
     /// # Arguments
-    /// * `destination` - Where to store the backup (local, R2, etc.)
+    /// * `destination` - Where to store the backup (typically `LocalDestination`)
     /// * `backup_name` - Optional name override (defaults to timestamped name)
     ///
     /// # Returns

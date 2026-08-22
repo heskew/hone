@@ -11,7 +11,7 @@ Hone includes a robust backup system that creates encrypted, compressed database
 - **Safe while running**: Uses SQLCipher's `sqlcipher_export()` to create consistent copies
 - **Encrypted**: Backups maintain the same encryption as the source database
 - **Compressed**: Gzip compression reduces backup size
-- **Pluggable**: `BackupDestination` trait allows multiple storage backends
+- **Local storage**: Filesystem destination, including NAS/mounted paths
 - **Retention**: Automatic pruning keeps the most recent N backups
 
 ## CLI Commands
@@ -400,17 +400,6 @@ services:
       - HONE_BACKUP_SCHEDULE=24
       - HONE_BACKUP_RETENTION=14
       - HONE_BACKUP_DIR=/backups
-```
-
-## Future: Cloud Backup (R2)
-
-For cloud offsite backup, the system includes a stub for Cloudflare R2. When implemented:
-
-```bash
-HONE_R2_BUCKET=your-bucket-name
-HONE_R2_ACCESS_KEY_ID=your-access-key
-HONE_R2_SECRET_ACCESS_KEY=your-secret-key
-HONE_R2_ENDPOINT=https://<account_id>.r2.cloudflarestorage.com
 ```
 
 ## Backup Format
