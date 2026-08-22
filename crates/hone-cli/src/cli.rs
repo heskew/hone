@@ -96,7 +96,8 @@ pub enum Commands {
         ///
         /// When set, starts an MCP server for LLM tool access on the specified port.
         /// This enables conversational queries via Claude Desktop or other MCP clients.
-        /// MCP uses the same authentication as the REST API (`--no-auth` leaves both open on loopback).
+        /// Prefer `HONE_MCP_KEYS` for LLM clients (rejected on `/api`).
+        /// `HONE_API_KEYS` still work on `/mcp`. `--no-auth` leaves both open on loopback.
         /// Example: --mcp-port 3001
         #[arg(long)]
         mcp_port: Option<u16>,

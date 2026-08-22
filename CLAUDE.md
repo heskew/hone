@@ -37,7 +37,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 - **hone-server**: Axum REST API
   - `lib.rs` - Server config, router, auth middleware, security headers
   - `handlers/` - Domain-specific HTTP handlers (22 modules)
-  - `mcp/` - MCP server for LLM tool access (enable with `--mcp-port 3001`; same `auth_middleware` as `/api`)
+  - `mcp/` - MCP server for LLM tool access (enable with `--mcp-port 3001`; same `auth_middleware` as `/api`; `HONE_MCP_KEYS` are `/mcp`-only, `HONE_API_KEYS` still work on `/mcp`)
   - Cloudflare Access authentication, audit logging
 
 ## Key Design Decisions

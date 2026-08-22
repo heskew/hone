@@ -634,6 +634,29 @@ async fn test_auth_required() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[test]
+fn accept_bearer_scopes_mcp_and_api_keys() {
+    let config = ServerConfig {
+        api_keys: vec!["api-token".to_string()],
+        mcp_keys: vec!["mcp-token".to_string()],
+        ..Default::default()
+    };
+    assert_eq!(accept_bearer("/mcp", "mcp-token", &config), Some("mcp-key"));
+    assert_eq!(
+        accept_bearer("/mcp/session", "mcp-token", &config),
+        Some("mcp-key")
+    );
+    assert_eq!(accept_bearer("/api/tags", "mcp-token", &config), None);
+    assert_eq!(accept_bearer("/mcp", "api-token", &config), Some("api-key"));
+    assert_eq!(
+        accept_bearer("/api/tags", "api-token", &config),
+        Some("api-key")
+    );
+    assert_eq!(accept_bearer("/mcp", "nope", &config), None);
+    assert!(!is_mcp_path("/api/mcp"));
+    assert!(!is_mcp_path("/mcp-extra"));
+}
+
 #[tokio::test]
 async fn test_auth_with_header() {
     let db = Database::in_memory().unwrap();

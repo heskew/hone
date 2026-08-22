@@ -38,11 +38,12 @@ On your Raspberry Pi (or wherever Hone runs):
 
 ```bash
 # Start with MCP on port 3001
-# MCP uses the same auth as /api (HONE_API_KEYS, CF Access, or trusted networks).
+# Prefer HONE_MCP_KEYS for LLM clients (rejected on /api).
+# HONE_API_KEYS still work on /mcp. CF Access and trusted networks cover both.
 # --mcp-allowed-hosts is needed for access from other machines: the MCP
 # server only accepts loopback Host headers by default (DNS rebinding
 # protection), so list the hostname/IP clients will use to reach it
-export HONE_API_KEYS=your-generated-key
+export HONE_MCP_KEYS=your-generated-mcp-key
 hone serve --port 3000 --mcp-port 3001 --host 0.0.0.0 --mcp-allowed-hosts pi-hostname
 
 # Or with all your usual options
@@ -67,16 +68,16 @@ You should see:
 The MCP server exposes a JSON-RPC endpoint. You can call it directly from any HTTP client or custom agent:
 
 ```bash
-# List available tools (same credentials as the REST API)
+# List available tools (prefer HONE_MCP_KEYS; HONE_API_KEYS still work)
 curl http://pi-hostname:3001/mcp -X POST \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $HONE_API_KEY" \
+  -H "Authorization: Bearer $HONE_MCP_KEY" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
 
 # Call a tool
 curl http://pi-hostname:3001/mcp -X POST \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $HONE_API_KEY" \
+  -H "Authorization: Bearer $HONE_MCP_KEY" \
   -d '{
     "jsonrpc":"2.0",
     "id":2,
@@ -184,7 +185,8 @@ Type=simple
 User=pi
 WorkingDirectory=/home/pi/hone
 Environment=HONE_DB_KEY=your-encryption-key
-Environment=HONE_API_KEYS=your-generated-key
+Environment=HONE_API_KEYS=your-generated-api-key
+Environment=HONE_MCP_KEYS=your-generated-mcp-key
 Environment=OLLAMA_HOST=http://192.168.1.100:11434
 Environment=OLLAMA_MODEL=llama3.2
 ExecStart=/home/pi/hone/hone serve \
@@ -208,7 +210,7 @@ Once running, query the MCP endpoint from any HTTP client on your network:
 ```bash
 curl http://192.168.1.50:3001/mcp -X POST \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer your-generated-key" \
+  -H "Authorization: Bearer your-generated-mcp-key" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_spending_summary","arguments":{"period":"this-month"}}}'
 ```
 
@@ -216,11 +218,14 @@ curl http://192.168.1.50:3001/mcp -X POST \
 
 ### Authentication
 
-MCP uses the same `auth_middleware` as `/api`. When auth is required (the default), `/mcp` is not reachable without credentials. Accepted credentials are the same as the REST API:
+MCP uses the same `auth_middleware` as `/api`. When auth is required (the default), `/mcp` is not reachable without credentials.
 
-- `Authorization: Bearer <key>` (`HONE_API_KEYS`)
-- Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) or user header
-- A client IP in `HONE_TRUSTED_NETWORKS`
+Bearer tokens are scoped:
+
+- `HONE_MCP_KEYS` — accepted on `/mcp`, rejected on `/api`. Prefer these for LLM clients so a leaked token cannot call write APIs.
+- `HONE_API_KEYS` — accepted on `/api` and `/mcp`. Existing single-key setups keep working.
+
+Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) / user header and `HONE_TRUSTED_NETWORKS` still authenticate both ports. Those are session/network identity, not tokens.
 
 `--no-auth` leaves both the API and MCP open, consistent with the REST API. `serve` refuses that flag unless `--host` is loopback.
 
@@ -234,7 +239,7 @@ The MCP server binds to the same `--host` as the API:
 - `--host 127.0.0.1` — Only local connections (default)
 - `--host 0.0.0.0` — All network interfaces (for LAN access)
 
-Do NOT expose `--mcp-port` to the internet. On a private LAN, use API keys or trusted networks; `--no-auth` is not accepted on a published bind.
+Do NOT expose `--mcp-port` to the internet. On a private LAN, use `HONE_MCP_KEYS` (or `HONE_API_KEYS`) or trusted networks; `--no-auth` is not accepted on a published bind.
 
 ### Firewall
 
@@ -255,7 +260,7 @@ sudo ufw allow from 192.168.1.0/24 to any port 3001
 
 ### "No tools available" in Claude Desktop
 
-1. Check the MCP endpoint is reachable: `curl -H "Authorization: Bearer $HONE_API_KEY" http://pi:3001/mcp`
+1. Check the MCP endpoint is reachable: `curl -H "Authorization: Bearer $HONE_MCP_KEY" http://pi:3001/mcp`
 2. Verify config file syntax (JSON must be valid)
 3. Restart Claude Desktop completely
 
@@ -281,7 +286,7 @@ import httpx
 import json
 
 MCP_URL = "http://192.168.1.50:3001/mcp"
-MCP_HEADERS = {"Authorization": "Bearer your-generated-key"}
+MCP_HEADERS = {"Authorization": "Bearer your-generated-mcp-key"}
 
 def call_tool(name: str, args: dict) -> dict:
     """Call an MCP tool and return the result."""

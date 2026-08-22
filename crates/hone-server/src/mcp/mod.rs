@@ -187,12 +187,13 @@ impl HoneMcpServer {
     }
 }
 
-/// Build the MCP HTTP router, gated by the same auth as `/api`.
+/// Build the MCP HTTP router, gated by the same auth middleware as `/api`.
 ///
 /// `extra_allowed_hosts` extends rmcp's loopback-only Host allowlist, which
 /// exists to block DNS rebinding (RUSTSEC-2026-0189). That allowlist is not
 /// authentication: when `config.require_auth` is true, requests still need
-/// API credentials (or a trusted-network match).
+/// credentials (or a trusted-network match). `HONE_MCP_KEYS` are accepted
+/// here and rejected on `/api`; `HONE_API_KEYS` still work on both.
 pub(crate) fn create_mcp_router(
     db: Database,
     extra_allowed_hosts: &[String],
@@ -354,7 +355,121 @@ mod tests {
         assert_ne!(
             response.status(),
             StatusCode::UNAUTHORIZED,
-            "valid API key must pass the same auth gate as /api"
+            "HONE_API_KEYS still work on /mcp so existing setups keep working"
+        );
+    }
+
+    fn bearer_mcp_request(key: &str) -> Request<Body> {
+        Request::builder()
+            .method("POST")
+            .uri("/mcp")
+            .header("content-type", "application/json")
+            .header("authorization", format!("Bearer {key}"))
+            .body(Body::from(
+                r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            ))
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_only_key_accepted_on_mcp() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_keys: vec!["mcp-only-token".to_string()],
+            api_keys: vec!["api-only-token".to_string()],
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app
+            .oneshot(bearer_mcp_request("mcp-only-token"))
+            .await
+            .unwrap();
+
+        assert_ne!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "HONE_MCP_KEYS must be accepted on /mcp"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_rejects_unauthenticated_when_mcp_keys_configured() {
+        let db = Database::in_memory().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_keys: vec!["mcp-only-token".to_string()],
+            ..Default::default()
+        };
+        let app = create_mcp_router(db, &[], config);
+
+        let response = app.oneshot(mcp_json_request()).await.unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "configuring HONE_MCP_KEYS must not leave /mcp open"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_only_key_rejected_on_api() {
+        let db = Database::in_memory().unwrap();
+        db.seed_root_tags().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_keys: vec!["mcp-only-token".to_string()],
+            api_keys: vec!["api-only-token".to_string()],
+            ..Default::default()
+        };
+        let app = crate::create_router(db, None, config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tags")
+                    .header("authorization", "Bearer mcp-only-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "HONE_MCP_KEYS must not open /api"
+        );
+    }
+
+    #[tokio::test]
+    async fn api_only_key_accepted_on_api() {
+        let db = Database::in_memory().unwrap();
+        db.seed_root_tags().unwrap();
+        let config = ServerConfig {
+            require_auth: true,
+            mcp_keys: vec!["mcp-only-token".to_string()],
+            api_keys: vec!["api-only-token".to_string()],
+            ..Default::default()
+        };
+        let app = crate::create_router(db, None, config);
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tags")
+                    .header("authorization", "Bearer api-only-token")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            response.status(),
+            StatusCode::OK,
+            "HONE_API_KEYS must still open /api"
         );
     }
 
