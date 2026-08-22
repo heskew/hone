@@ -655,6 +655,21 @@ fn accept_bearer_scopes_mcp_and_api_keys() {
     assert_eq!(accept_bearer("/mcp", "nope", &config), None);
     assert!(!is_mcp_path("/api/mcp"));
     assert!(!is_mcp_path("/mcp-extra"));
+
+    let secret = "unit-test-mcp-jwt";
+    let resource = "http://127.0.0.1:3001/mcp";
+    let jwt = mint_mcp_access_token(secret, resource, 60).unwrap();
+    let config = ServerConfig {
+        api_keys: vec!["api-token".to_string()],
+        mcp_oauth: McpOAuthConfig {
+            resource: Some(resource.to_string()),
+            jwt_secret: Some(secret.to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert_eq!(accept_bearer("/mcp", &jwt, &config), Some("mcp-token"));
+    assert_eq!(accept_bearer("/api/tags", &jwt, &config), None);
 }
 
 #[tokio::test]

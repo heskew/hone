@@ -34,6 +34,7 @@ mod handlers;
 pub mod mcp;
 mod scheduler;
 
+pub use mcp::{mint_mcp_access_token, McpOAuthConfig};
 pub use scheduler::{start_backup_scheduler, BackupScheduleConfig};
 
 /// Maximum file upload size (10 MB)
@@ -84,9 +85,11 @@ pub struct ServerConfig {
     /// Format: "Bearer <key>" in Authorization header.
     /// Accepted on `/api` and `/mcp` (full-access credential).
     pub api_keys: Vec<String>,
-    /// MCP-only Bearer keys (`HONE_MCP_KEYS`). Accepted on `/mcp`, rejected on `/api`.
-    /// Use these for LLM clients so a leaked token cannot call write APIs.
+    /// Opaque MCP-only Bearer keys (`HONE_MCP_KEYS`). Accepted on `/mcp`, rejected on `/api`.
+    /// Local fallback; prefer audience-bound JWTs via `mcp_oauth`.
     pub mcp_keys: Vec<String>,
+    /// MCP OAuth resource-server config (RFC 9728 / RFC 8707).
+    pub mcp_oauth: crate::mcp::McpOAuthConfig,
     /// Cloudflare Access JWT validation config (optional but recommended)
     pub cf_jwt: CfJwtConfig,
     /// Trusted networks that bypass authentication (e.g., "192.168.1.0/24", "10.0.0.5")
@@ -104,6 +107,7 @@ impl Default for ServerConfig {
             allowed_origins: vec![],
             api_keys: vec![],
             mcp_keys: vec![],
+            mcp_oauth: crate::mcp::McpOAuthConfig::default(),
             cf_jwt: CfJwtConfig::default(),
             trusted_networks: vec![],
             trusted_proxies: vec![],
@@ -147,8 +151,10 @@ pub struct AppState {
 /// **API keys**: Compared using constant-time comparison to prevent timing attacks.
 /// Accepted on `/api` and `/mcp`.
 ///
-/// **MCP keys**: Same comparison. Accepted only on `/mcp` so LLM-client tokens
-/// cannot call write endpoints on `/api`.
+/// **MCP keys**: Opaque `HONE_MCP_KEYS` are accepted only on `/mcp`.
+///
+/// **MCP JWTs**: HS256 (`HONE_MCP_JWT_SECRET`) or RS256 (`HONE_MCP_JWKS_URL`)
+/// tokens must include the MCP resource in `aud` (RFC 8707). Rejected on `/api`.
 pub(crate) async fn auth_middleware(
     State(config): State<Arc<ServerConfig>>,
     request: Request,
@@ -238,28 +244,67 @@ pub(crate) async fn auth_middleware(
         return next.run(request).await;
     }
 
-    // Bearer tokens are scoped: MCP-only keys cannot open /api write routes.
-    // API keys still work on /mcp so existing HONE_API_KEYS setups keep working.
+    // Bearer tokens are scoped: MCP-only keys and MCP-audience JWTs cannot
+    // open /api write routes. API keys still work on /mcp so existing
+    // HONE_API_KEYS setups keep working.
     let path = request.uri().path();
-    if let Some(user) = request
+    let bearer = request
         .headers()
         .get(AUTHORIZATION_HEADER)
         .and_then(|v| v.to_str().ok())
-        .and_then(|auth| auth.strip_prefix("Bearer "))
-        .and_then(|key| accept_bearer(path, key, &config))
-    {
-        info!(user, path = %path, "Authenticated via Bearer token");
-        return next.run(request).await;
+        .and_then(|auth| auth.strip_prefix("Bearer "));
+
+    if let Some(token) = bearer {
+        if let Some(user) = accept_bearer(path, token, &config) {
+            info!(user, path = %path, "Authenticated via Bearer token");
+            return next.run(request).await;
+        }
+
+        // RS256 MCP tokens from an external AS (JWKS). HS256 is handled in
+        // accept_bearer so tests stay sync.
+        if is_mcp_path(path)
+            && mcp::oauth::looks_like_jwt(token)
+            && config.mcp_oauth.jwks_url.is_some()
+        {
+            if let Some(url) = config.mcp_oauth.jwks_url.as_deref() {
+                match mcp::oauth::fetch_jwk_set(url).await {
+                    Ok(keys) => {
+                        if mcp::oauth::validate_mcp_rs256_with_keys(token, &config.mcp_oauth, &keys)
+                            .is_ok()
+                        {
+                            info!(user = "mcp-token", path = %path, "Authenticated via MCP JWT");
+                            return next.run(request).await;
+                        }
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to fetch MCP JWKS");
+                    }
+                }
+            }
+        }
     }
 
     warn!(path = %request.uri().path(), "Unauthorized request - no valid auth");
-    (
+    unauthorized_mcp_or_api(path, &config)
+}
+
+fn unauthorized_mcp_or_api(path: &str, config: &ServerConfig) -> Response {
+    let mut response = (
         StatusCode::UNAUTHORIZED,
         Json(serde_json::json!({
             "error": "Authentication required"
         })),
     )
-        .into_response()
+        .into_response();
+
+    if is_mcp_path(path) {
+        if let Ok(value) = HeaderValue::from_str(&mcp::oauth::www_authenticate(config)) {
+            response
+                .headers_mut()
+                .insert(header::WWW_AUTHENTICATE, value);
+        }
+    }
+    response
 }
 
 /// Validate a Cloudflare Access JWT
@@ -368,13 +413,19 @@ fn is_mcp_path(path: &str) -> bool {
 
 /// Label for a Bearer token that is valid on this path, or `None` to reject.
 ///
-/// `HONE_MCP_KEYS` match only `/mcp`. `HONE_API_KEYS` match `/api` and `/mcp`.
+/// On `/mcp`: opaque `HONE_MCP_KEYS`, then HS256 MCP-audience JWTs, then
+/// `HONE_API_KEYS`. On `/api`: API keys only (MCP keys and MCP JWTs rejected).
 fn accept_bearer(path: &str, token: &str, config: &ServerConfig) -> Option<&'static str> {
     let api_ok = validate_api_key(token, &config.api_keys);
     let mcp_ok = validate_api_key(token, &config.mcp_keys);
     if is_mcp_path(path) {
         if mcp_ok {
             return Some("mcp-key");
+        }
+        if mcp::oauth::looks_like_jwt(token)
+            && mcp::oauth::validate_mcp_hs256(token, &config.mcp_oauth).is_ok()
+        {
+            return Some("mcp-token");
         }
         if api_ok {
             return Some("api-key");

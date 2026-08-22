@@ -96,9 +96,11 @@ pub enum Commands {
         ///
         /// When set, starts an MCP server for LLM tool access on the specified port.
         /// This enables conversational queries via Claude Desktop or other MCP clients.
-        /// Prefer `HONE_MCP_KEYS` for LLM clients (rejected on `/api`).
-        /// `HONE_API_KEYS` still work on `/mcp`. `--no-auth` leaves both open on loopback.
-        /// Example: --mcp-port 3001
+        /// MCP is an OAuth 2.1 resource server (RFC 9728 / RFC 8707).
+        /// Prefer audience-bound JWTs (`HONE_MCP_JWT_SECRET` + `hone mcp-token`,
+        /// or an external AS via `HONE_MCP_JWKS_URL`). Opaque `HONE_MCP_KEYS`
+        /// still work on `/mcp`. `HONE_API_KEYS` still work on `/mcp`.
+        /// `--no-auth` leaves both open on loopback. Example: --mcp-port 3001
         #[arg(long)]
         mcp_port: Option<u16>,
 
@@ -109,6 +111,17 @@ pub enum Commands {
         /// authorities clients will use. Example: --mcp-allowed-hosts pi-hostname
         #[arg(long, value_delimiter = ',')]
         mcp_allowed_hosts: Vec<String>,
+    },
+
+    /// Mint a local MCP access token (HS256, aud = HONE_MCP_RESOURCE)
+    ///
+    /// Signs a resource-bound JWT for `/mcp`. This is not an OAuth
+    /// authorization server — no authorize/token endpoints are hosted.
+    /// Requires HONE_MCP_JWT_SECRET and HONE_MCP_RESOURCE.
+    McpToken {
+        /// Token lifetime in seconds
+        #[arg(long, default_value = "3600")]
+        ttl: u64,
     },
 
     /// Show dashboard summary

@@ -38,13 +38,17 @@ On your Raspberry Pi (or wherever Hone runs):
 
 ```bash
 # Start with MCP on port 3001
-# Prefer HONE_MCP_KEYS for LLM clients (rejected on /api).
-# HONE_API_KEYS still work on /mcp. CF Access and trusted networks cover both.
+# MCP is an OAuth 2.1 resource server (spec 2026-07-28): RFC 9728 metadata
+# and RFC 8707 audience-bound JWTs. We do not host an authorization server.
 # --mcp-allowed-hosts is needed for access from other machines: the MCP
 # server only accepts loopback Host headers by default (DNS rebinding
 # protection), so list the hostname/IP clients will use to reach it
-export HONE_MCP_KEYS=your-generated-mcp-key
+export HONE_MCP_RESOURCE=http://pi-hostname:3001/mcp
+export HONE_MCP_JWT_SECRET=your-signing-secret
 hone serve --port 3000 --mcp-port 3001 --host 0.0.0.0 --mcp-allowed-hosts pi-hostname
+
+# Mint a token bound to that resource (rejected on /api):
+export HONE_MCP_KEY=$(hone mcp-token --ttl 3600)
 
 # Or with all your usual options
 hone serve \
@@ -68,7 +72,7 @@ You should see:
 The MCP server exposes a JSON-RPC endpoint. You can call it directly from any HTTP client or custom agent:
 
 ```bash
-# List available tools (prefer HONE_MCP_KEYS; HONE_API_KEYS still work)
+# List available tools (MCP-audience JWT; opaque HONE_MCP_KEYS and HONE_API_KEYS still work)
 curl http://pi-hostname:3001/mcp -X POST \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $HONE_MCP_KEY" \
@@ -186,7 +190,8 @@ User=pi
 WorkingDirectory=/home/pi/hone
 Environment=HONE_DB_KEY=your-encryption-key
 Environment=HONE_API_KEYS=your-generated-api-key
-Environment=HONE_MCP_KEYS=your-generated-mcp-key
+Environment=HONE_MCP_RESOURCE=http://192.168.1.50:3001/mcp
+Environment=HONE_MCP_JWT_SECRET=your-signing-secret
 Environment=OLLAMA_HOST=http://192.168.1.100:11434
 Environment=OLLAMA_MODEL=llama3.2
 ExecStart=/home/pi/hone/hone serve \
@@ -220,12 +225,28 @@ curl http://192.168.1.50:3001/mcp -X POST \
 
 MCP uses the same `auth_middleware` as `/api`. When auth is required (the default), `/mcp` is not reachable without credentials.
 
-Bearer tokens are scoped:
+Hone's MCP port is an **OAuth 2.1 resource server** ([MCP Authorization 2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization)), not an authorization server. The MCP resource is distinct from the main API (`http://host:3001/mcp` vs `http://host:3000/api`).
 
-- `HONE_MCP_KEYS` — accepted on `/mcp`, rejected on `/api`. Prefer these for LLM clients so a leaked token cannot call write APIs.
-- `HONE_API_KEYS` — accepted on `/api` and `/mcp`. Existing single-key setups keep working.
+Implemented:
 
-Cloudflare Access JWT (`Cf-Access-Jwt-Assertion`) / user header and `HONE_TRUSTED_NETWORKS` still authenticate both ports. Those are session/network identity, not tokens.
+- **RFC 9728** Protected Resource Metadata at `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/mcp` (public, on the MCP port)
+- **RFC 6750** `WWW-Authenticate` on `/mcp` 401s, with `resource_metadata` and `scope="mcp:read"`
+- **RFC 8707** audience-bound JWTs: `aud` must be `HONE_MCP_RESOURCE`. Mint locally with `hone mcp-token` (`HONE_MCP_JWT_SECRET`, HS256) or validate RS256 tokens from an external AS (`HONE_MCP_JWKS_URL`, optional `HONE_MCP_ISSUER` / `HONE_MCP_AUTHORIZATION_SERVERS`)
+- MCP-audience JWTs are **rejected on `/api`**
+
+Skipped (too large for this chip; not theater):
+
+- Hosting an AS (RFC 8414 metadata, `/authorize`, `/token`, PKCE, Dynamic Client Registration, Client ID Metadata Documents)
+- Refresh tokens / `offline_access`
+- DPoP
+- Step-up `403 insufficient_scope` (all tools share `mcp:read`)
+
+Opaque fallbacks (not MCP OAuth tokens):
+
+- `HONE_MCP_KEYS` — accepted on `/mcp`, rejected on `/api`
+- `HONE_API_KEYS` — accepted on `/api` and `/mcp`
+
+Cloudflare Access JWT / user header and `HONE_TRUSTED_NETWORKS` still authenticate both ports. Those are session/network identity, not resource-bound tokens.
 
 `--no-auth` leaves both the API and MCP open, consistent with the REST API. `serve` refuses that flag unless `--host` is loopback.
 
@@ -239,7 +260,7 @@ The MCP server binds to the same `--host` as the API:
 - `--host 127.0.0.1` — Only local connections (default)
 - `--host 0.0.0.0` — All network interfaces (for LAN access)
 
-Do NOT expose `--mcp-port` to the internet. On a private LAN, use `HONE_MCP_KEYS` (or `HONE_API_KEYS`) or trusted networks; `--no-auth` is not accepted on a published bind.
+Do NOT expose `--mcp-port` to the internet. On a private LAN, prefer MCP-audience JWTs (`HONE_MCP_JWT_SECRET` + `hone mcp-token`, or an external AS). Opaque `HONE_MCP_KEYS` / `HONE_API_KEYS` and trusted networks still work. `--no-auth` is not accepted on a published bind.
 
 ### Firewall
 

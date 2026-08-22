@@ -78,6 +78,7 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Commands::McpToken { ttl } => commands::cmd_mcp_token(ttl),
         Commands::Dashboard => commands::cmd_dashboard(&cli.db, cli.no_encrypt),
         Commands::Status => commands::cmd_status(&cli.db, cli.no_encrypt),
         Commands::Accounts => commands::cmd_accounts(&cli.db, cli.no_encrypt),
