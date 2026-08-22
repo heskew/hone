@@ -891,6 +891,7 @@ export ANTHROPIC_COMPATIBLE_HOST="http://localhost:11434"
 export ANTHROPIC_COMPATIBLE_MODEL="qwen3-coder"
 hone serve --port 3000
 ```
+`ANTHROPIC_COMPATIBLE_HOST` must be local (loopback, RFC1918, `localhost`, `*.local`, or a Docker/LAN short name). A public URL is refused unless `HONE_ALLOW_REMOTE_AI=1`.
 Navigate to `#/explore` in the web UI.
 ### Session Persistence (Phase 2) ✅
 Multi-turn conversation support with server-side session management:

@@ -129,6 +129,7 @@ Conversational interface for querying financial data:
 - Model selection per-session
 - Suggestion chips for common questions
 - Requires AI orchestrator configuration (`ANTHROPIC_COMPATIBLE_HOST`, `ANTHROPIC_COMPATIBLE_MODEL`)
+- `OLLAMA_HOST` and `ANTHROPIC_COMPATIBLE_HOST` must be local (loopback / RFC1918 / `localhost` / `*.local` / Docker names) unless `HONE_ALLOW_REMOTE_AI=1`
 
 ## Insight Engine
 

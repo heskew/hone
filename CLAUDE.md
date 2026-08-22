@@ -44,7 +44,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 
 1. **CSV-only import** - No bank credentials stored, privacy-first
 2. **Encryption required** - SQLCipher encryption by default (`HONE_DB_KEY`); `--no-encrypt` for dev
-3. **Local AI only** - Ollama and OpenAI-compatible servers. No cloud APIs
+3. **Local AI only** - Ollama and OpenAI-compatible servers. No cloud APIs. `OLLAMA_HOST` and `ANTHROPIC_COMPATIBLE_HOST` are refused when they are public unless `HONE_ALLOW_REMOTE_AI=1`
 4. **Deduplication** - SHA256 hash of (date, description, amount) prevents double-imports
 5. **Secure by default** - Cloudflare Access auth required; `--no-auth` only on loopback
 6. **CSRF on `/api`** - `tower_http::csrf::CsrfLayer` (no tokens). Trusted-net and CF-header sessions are browser-invocable; Bearer/MCP clients that omit `Origin` / `Sec-Fetch-Site` still pass

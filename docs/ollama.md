@@ -25,6 +25,27 @@ Hone supports two complementary AI modes:
 
 Both modes are optional and can be used independently or together.
 
+### Local hosts only
+
+`OLLAMA_HOST` and `ANTHROPIC_COMPATIBLE_HOST` must point at a local AI server. Public / cloud URLs are **refused at startup** unless you explicitly opt in.
+
+**Treated as local** (no opt-in):
+- Loopback (`127.0.0.1`, `::1`, `localhost`)
+- RFC1918 LAN addresses (`10/8`, `172.16/12`, `192.168/16`) and IPv6 unique-local
+- mDNS (`*.local`)
+- Single-label names used on a LAN or in Docker Compose (`ollama`, `mac`)
+- Docker Desktop (`*.docker.internal`)
+
+Documented Pi + Windows-GPU and Compose sidecar setups (`http://192.168.1.100:11434`, `http://ollama:11434`, `http://localhost:11434`) stay allowed.
+
+To send data to a non-local host (not recommended — financial data leaves your network):
+
+```bash
+export HONE_ALLOW_REMOTE_AI=1
+```
+
+`serve` then starts but prints a loud warning. Explore mode uses `ANTHROPIC_COMPATIBLE_HOST` and the same rule.
+
 ### Other Backends
 
 Other backends are supported through the same `AIBackend` trait:
@@ -208,6 +229,8 @@ export ANTHROPIC_COMPATIBLE_HOST=http://<ollama-ip>:11434
 export ANTHROPIC_COMPATIBLE_MODEL=llama3.1  # Must support tool calling
 ```
 
+`<ollama-ip>` must be local (LAN, loopback, or a Docker service name). A public hostname is refused unless `HONE_ALLOW_REMOTE_AI=1`.
+
 **Recommended models for agentic tasks:**
 - `llama3.3` - **Recommended** - best instruction following, handles empty data gracefully
 - `llama3.1` - Good alternative, faster than 3.3 but less precise with complex prompts
@@ -289,6 +312,8 @@ Explore Mode provides a conversational interface for querying your financial dat
 AI Metrics does **not** persist prompt payloads or merchant/transaction text in `ollama_metrics.input_text`. Older databases that still have raw `input_text` are cleared the next time the database is opened. Training data for merchant normalization comes from `merchant_name_cache`, not from stored prompts.
 
 The AI uses the same tools listed above to answer your questions, dynamically querying your data as needed.
+
+Explore requires `ANTHROPIC_COMPATIBLE_HOST` (and a tool-calling model). That host is subject to the same local-only gate as `OLLAMA_HOST`.
 
 ## Testing the Connection
 
