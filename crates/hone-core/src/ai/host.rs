@@ -127,6 +127,10 @@ fn is_local_hostname(host: &str) -> bool {
     if host.is_empty() {
         return false;
     }
+    // Parse IPs first so `[::]` / `0.0.0.0` are not treated as single-label names.
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        return is_local_ip(ip);
+    }
     if host == "localhost" {
         return true;
     }
@@ -137,10 +141,7 @@ fn is_local_hostname(host: &str) -> bool {
         return true;
     }
     // Docker Compose service names and short LAN names (`ollama`, `mac`).
-    if !host.contains('.') {
-        return true;
-    }
-    host.parse::<IpAddr>().is_ok_and(is_local_ip)
+    !host.contains('.')
 }
 
 fn is_local_ip(ip: IpAddr) -> bool {
