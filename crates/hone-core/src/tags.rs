@@ -380,7 +380,7 @@ impl<'a> TagAssigner<'a> {
         let result = ai.classify_merchant(description).await;
         let latency_ms = start.elapsed().as_millis() as i64;
 
-        // Record the metric with input/output for debugging
+        // Record the metric (input_text is never persisted — no prompt/txn text)
         let confidence = 0.7; // Default confidence for LLM
         let result_text = result
             .as_ref()
@@ -398,7 +398,7 @@ impl<'a> TagAssigner<'a> {
                 None
             },
             transaction_id: None, // Will be set by caller if needed
-            input_text: Some(description.to_string()),
+            input_text: None,
             result_text,
             metadata: None,
         };

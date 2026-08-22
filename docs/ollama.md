@@ -283,8 +283,10 @@ Explore Mode provides a conversational interface for querying your financial dat
 **Features:**
 - Multi-turn conversations with session persistence (30-minute timeout)
 - Model selector to switch between available Ollama models at runtime
-- All queries tracked in AI Metrics as `explore_query` operations
+- All queries tracked in AI Metrics as `explore_query` operations (latency, success, model — not the query text)
 - Tool call tracking: view which tools were called, their inputs, and outputs in AI Metrics detail view
+
+AI Metrics does **not** persist prompt payloads or merchant/transaction text in `ollama_metrics.input_text`. Older databases that still have raw `input_text` are cleared the next time the database is opened. Training data for merchant normalization comes from `merchant_name_cache`, not from stored prompts.
 
 The AI uses the same tools listed above to answer your questions, dynamically querying your data as needed.
 

@@ -173,7 +173,9 @@ impl<'a> TrainingDataGenerator<'a> {
             });
         }
 
-        // Source: ollama_metrics successful normalizations (if user didn't correct them)
+        // Historical source: ollama_metrics successful normalizations.
+        // New metrics no longer store input_text (privacy); leftover rows are
+        // cleared on database open. merchant_name_cache is the live source.
         let ollama_examples = self.db.get_ollama_normalize_training_data()?;
         for (input, output) in ollama_examples {
             // Only include if not already overridden by user
@@ -387,6 +389,9 @@ impl Database {
     }
 
     /// Get successful Ollama normalizations (not corrected by user) for training
+    ///
+    /// New `ollama_metrics` rows do not store `input_text`, so this typically
+    /// returns empty. Prefer `merchant_name_cache` for live training data.
     pub fn get_ollama_normalize_training_data(&self) -> Result<Vec<(String, String)>> {
         let conn = self.conn()?;
 

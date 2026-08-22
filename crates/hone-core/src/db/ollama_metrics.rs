@@ -12,6 +12,9 @@ use crate::models::{
 
 impl Database {
     /// Record an Ollama call metric
+    ///
+    /// `input_text` is never persisted. Prompt payloads and merchant/txn
+    /// descriptions must not land in `ollama_metrics` (privacy).
     pub fn record_ollama_metric(&self, metric: &NewOllamaMetric) -> Result<i64> {
         let conn = self.conn()?;
 
@@ -20,7 +23,7 @@ impl Database {
             INSERT INTO ollama_metrics (
                 operation, model, latency_ms, success, error_message,
                 confidence, transaction_id, input_text, result_text, metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
             "#,
             params![
                 metric.operation.as_str(),
@@ -30,7 +33,6 @@ impl Database {
                 metric.error_message,
                 metric.confidence,
                 metric.transaction_id,
-                metric.input_text,
                 metric.result_text,
                 metric.metadata,
             ],
@@ -556,6 +558,90 @@ mod tests {
         assert_eq!(recent[0].model, "llama3.2");
         assert_eq!(recent[0].latency_ms, 1500);
         assert!(recent[0].success);
+        // Privacy: raw merchant/txn text must not be stored
+        assert!(recent[0].input_text.is_none());
+    }
+
+    #[test]
+    fn test_record_metric_does_not_persist_raw_input_text() {
+        let db = Database::in_memory().unwrap();
+        let raw = "NETFLIX.COM*SECRET-TXN-42";
+
+        let metric = NewOllamaMetric {
+            operation: OllamaOperation::ClassifyMerchant,
+            model: "llama3.2".to_string(),
+            latency_ms: 100,
+            success: true,
+            error_message: None,
+            confidence: Some(0.9),
+            transaction_id: None,
+            input_text: Some(raw.to_string()),
+            result_text: Some("Netflix → streaming".to_string()),
+            metadata: None,
+        };
+
+        db.record_ollama_metric(&metric).unwrap();
+
+        let recent = db.get_recent_ollama_calls(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(
+            recent[0].input_text.is_none(),
+            "input_text must not persist prompt/txn text, got {:?}",
+            recent[0].input_text
+        );
+
+        // Belt and suspenders: the raw payload must not appear in the row at all
+        let conn = db.conn().unwrap();
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT input_text FROM ollama_metrics WHERE id = ?",
+                params![recent[0].id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(stored.is_none());
+
+        let blob: String = conn
+            .query_row(
+                "SELECT COALESCE(operation,'') || COALESCE(model,'') || COALESCE(error_message,'') || COALESCE(input_text,'') || COALESCE(result_text,'') || COALESCE(metadata,'') FROM ollama_metrics WHERE id = ?",
+                params![recent[0].id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !blob.contains(raw),
+            "raw input must not appear in persisted metric columns"
+        );
+    }
+
+    #[test]
+    fn test_existing_input_text_cleared_on_open() {
+        let db = Database::in_memory().unwrap();
+        let path = db.path().to_string();
+        let raw = "AMZN MKTP US*LEAKED-PROMPT";
+
+        {
+            let conn = db.conn().unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO ollama_metrics (operation, model, latency_ms, success, input_text)
+                VALUES ('classify_merchant', 'llama3.2', 1, 1, ?)
+                "#,
+                params![raw],
+            )
+            .unwrap();
+        }
+        drop(db);
+
+        // Re-open runs the one-shot scrub in run_migrations
+        let reopened = Database::new_unencrypted(&path).unwrap();
+        let recent = reopened.get_recent_ollama_calls(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(
+            recent[0].input_text.is_none(),
+            "leftover input_text must be cleared on open, got {:?}",
+            recent[0].input_text
+        );
     }
 
     #[test]

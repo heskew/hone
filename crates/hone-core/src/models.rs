@@ -1314,6 +1314,8 @@ pub struct OllamaMetric {
     pub error_message: Option<String>,
     pub confidence: Option<f64>,
     pub transaction_id: Option<i64>,
+    /// Legacy column. New rows are always NULL; leftover prompt/txn text is
+    /// cleared on database open. Do not treat this as a stored prompt.
     pub input_text: Option<String>,
     pub result_text: Option<String>,
     /// Additional metadata as JSON (e.g., tool calls for explore queries)
@@ -1330,6 +1332,7 @@ pub struct NewOllamaMetric {
     pub error_message: Option<String>,
     pub confidence: Option<f64>,
     pub transaction_id: Option<i64>,
+    /// Accepted by callers but never persisted (privacy: no prompt/txn text).
     pub input_text: Option<String>,
     pub result_text: Option<String>,
     /// Additional metadata as JSON (e.g., tool calls for explore queries)

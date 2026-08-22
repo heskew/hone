@@ -602,14 +602,6 @@ async fn enhance_candidates_with_ollama(
 
         let latency_ms = start.elapsed().as_millis() as i64;
 
-        let input_text = format!(
-            "receipt: {} ${:.2} | tx: {} ${:.2}",
-            receipt.receipt_merchant.as_deref().unwrap_or("?"),
-            receipt.receipt_total.unwrap_or(0.0),
-            tx.description,
-            tx.amount.abs()
-        );
-
         match result {
             Ok(evaluation) => {
                 // Record success metric
@@ -621,7 +613,7 @@ async fn enhance_candidates_with_ollama(
                     error_message: None,
                     confidence: Some(evaluation.confidence),
                     transaction_id: Some(tx.id),
-                    input_text: Some(input_text.clone()),
+                    input_text: None,
                     result_text: Some(evaluation.reason.clone()),
                     metadata: None,
                 });
@@ -650,7 +642,7 @@ async fn enhance_candidates_with_ollama(
                     error_message: Some(e.to_string()),
                     confidence: None,
                     transaction_id: Some(tx.id),
-                    input_text: Some(input_text),
+                    input_text: None,
                     result_text: None,
                     metadata: None,
                 });

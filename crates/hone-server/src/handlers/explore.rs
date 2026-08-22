@@ -333,7 +333,7 @@ pub async fn query_explore(
         error_message: error_message.clone(),
         confidence: None,
         transaction_id: None,
-        input_text: Some(payload.query.clone()),
+        input_text: None,
         result_text: response_text.clone(),
         metadata: metadata_json,
     };

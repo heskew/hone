@@ -502,6 +502,8 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_mileage_date ON mileage_logs(date);
 
             -- Ollama metrics (tracks each LLM call for observability)
+            -- input_text is a leftover column: new rows store NULL and existing
+            -- prompt/txn text is cleared below. Do not persist raw input.
             CREATE TABLE IF NOT EXISTS ollama_metrics (
                 id INTEGER PRIMARY KEY,
                 operation TEXT NOT NULL,
@@ -735,6 +737,13 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_insights_type ON insight_findings(insight_type);
             CREATE INDEX IF NOT EXISTS idx_insights_severity ON insight_findings(severity);
             "#,
+        )?;
+
+        // Privacy: drop leftover prompt/txn text from older metrics rows.
+        // CREATE TABLE IF NOT EXISTS cannot rewrite existing columns/rows.
+        conn.execute(
+            "UPDATE ollama_metrics SET input_text = NULL WHERE input_text IS NOT NULL",
+            [],
         )?;
 
         info!("Database schema initialized");
