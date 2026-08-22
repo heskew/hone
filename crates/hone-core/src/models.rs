@@ -184,7 +184,7 @@ pub struct Transaction {
     pub expected_amount: Option<f64>,
     /// Whether this transaction is archived (hidden from reports/lists)
     pub archived: bool,
-    /// Original import data as JSON (for reprocessing)
+    /// Original import data as JSON (for reprocessing; Amex PII keys omitted)
     pub original_data: Option<String>,
     /// Import format identifier (e.g., chase_csv, amex_csv, receipt, manual)
     pub import_format: Option<String>,
@@ -203,7 +203,7 @@ pub struct NewTransaction {
     pub amount: f64,
     pub category: Option<String>,
     pub import_hash: String,
-    /// Original import data as JSON (for reprocessing)
+    /// Original import data as JSON (for reprocessing; Amex PII keys omitted)
     pub original_data: Option<String>,
     /// Import format identifier (e.g., chase_csv, amex_csv, receipt, manual)
     pub import_format: Option<String>,

@@ -50,7 +50,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 6. **CSRF on `/api`** - `tower_http::csrf::CsrfLayer` (no tokens). Trusted-net and CF-header sessions are browser-invocable; Bearer/MCP clients that omit `Origin` / `Sec-Fetch-Site` still pass
 7. **Audit logging** - All API access logged
 8. **Full processing by default** - Import runs tagging + detection automatically
-9. **Raw data preservation** - Original CSV data stored as JSON for reprocessing
+9. **Raw data preservation** - Original CSV data stored as JSON for reprocessing (Amex extended Account # / address / card member omitted)
 
 ## Development Stage
 

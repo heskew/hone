@@ -160,6 +160,7 @@ Proactive AI-powered financial insights:
 
 - Account-to-person association via `entity_id`
 - Amex extended CSV extracts `Card Member` field
+- Amex `original_data` omits Account #, Address, City/State, Zip Code, and Card Member (existing rows are stripped on database open)
 - Transaction filtering by account owner or cardholder
 - Account-specific subscriptions
 

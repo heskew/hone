@@ -10,6 +10,19 @@ use tracing::debug;
 use crate::error::{Error, Result};
 use crate::models::{Bank, NewTransaction, PaymentMethod};
 
+/// Amex extended CSV headers that must not persist in `original_data`.
+///
+/// These are the literal column names from Amex exports (and the JSON keys
+/// `record_to_json` produces). Card Member is still stored on the dedicated
+/// `card_member` column for cardholder filtering.
+pub(crate) const AMEX_ORIGINAL_DATA_PII_KEYS: &[&str] = &[
+    "Account #",
+    "Address",
+    "City/State",
+    "Zip Code",
+    "Card Member",
+];
+
 /// Convert a CSV record to a JSON object using headers as keys
 fn record_to_json(headers: &StringRecord, record: &StringRecord) -> String {
     let mut map = serde_json::Map::new();
@@ -19,6 +32,19 @@ fn record_to_json(headers: &StringRecord, record: &StringRecord) -> String {
         }
     }
     json!(map).to_string()
+}
+
+/// Drop Amex extended-CSV PII keys from an `original_data` JSON object.
+///
+/// Returns the input unchanged if it is not a JSON object.
+pub(crate) fn redact_amex_original_data_pii(json_str: &str) -> String {
+    let Ok(Value::Object(mut map)) = serde_json::from_str(json_str) else {
+        return json_str.to_string();
+    };
+    for key in AMEX_ORIGINAL_DATA_PII_KEYS {
+        map.remove(*key);
+    }
+    Value::Object(map).to_string()
 }
 
 /// Parse CSV data from a bank into transactions
@@ -242,8 +268,10 @@ fn parse_amex<R: Read>(reader: R) -> Result<Vec<NewTransaction>> {
     for result in rdr.records() {
         let record = result?;
 
-        // Capture original data as JSON
-        let original_data = Some(record_to_json(&headers, &record));
+        // Capture original data as JSON, omitting Amex extended PII columns
+        let original_data = Some(redact_amex_original_data_pii(&record_to_json(
+            &headers, &record,
+        )));
 
         let date_str = record
             .get(0)
@@ -750,5 +778,54 @@ CA",ADOBE ACROPRO SUBS,"500 ADOBE LN","SAN JOSE, CA",95110,UNITED STATES,1234567
         // Should extract the full merchant name from Extended Details
         assert_eq!(transactions[0].description, "SP BATTERYSTORE");
         assert_eq!(transactions[0].amount, -11.99);
+    }
+
+    #[test]
+    fn test_parse_amex_extended_omits_pii_from_original_data() {
+        // Fixture uses fictional cardholder / address values — not production data.
+        let csv = r#"Date,Description,Card Member,Account #,Amount,Extended Details,Appears On Your Statement As,Address,City/State,Zip Code,Country,Reference,Category
+03/15/2024,NETFLIX.COM,PAT SAMPLE,-00011,15.49,"NETFLIX.COM",NETFLIX.COM,"1 TEST WAY","ANYTOWN, WA",99501,UNITED STATES,REF-TEST-001,Entertainment-Digital"#;
+
+        let transactions = parse_amex(csv.as_bytes()).unwrap();
+        assert_eq!(transactions.len(), 1);
+
+        let raw = transactions[0]
+            .original_data
+            .as_ref()
+            .expect("original_data should be stored");
+        let data: Value = serde_json::from_str(raw).unwrap();
+
+        for key in AMEX_ORIGINAL_DATA_PII_KEYS {
+            assert!(
+                data.get(*key).is_none(),
+                "{key} must not persist in original_data, got {raw}"
+            );
+        }
+
+        // Categorization / reprocess fields are kept
+        assert_eq!(data["Date"], "03/15/2024");
+        assert_eq!(data["Description"], "NETFLIX.COM");
+        assert_eq!(data["Amount"], "15.49");
+        assert_eq!(data["Extended Details"], "NETFLIX.COM");
+        assert_eq!(data["Appears On Your Statement As"], "NETFLIX.COM");
+        assert_eq!(data["Country"], "UNITED STATES");
+        assert_eq!(data["Reference"], "REF-TEST-001");
+        assert_eq!(data["Category"], "Entertainment-Digital");
+
+        // Dedicated card_member column is still extracted for cardholder filter
+        assert_eq!(transactions[0].card_member, Some("PAT SAMPLE".to_string()));
+
+        // PII values themselves must not appear in the persisted JSON
+        assert!(!raw.contains("-00011"), "account number leaked: {raw}");
+        assert!(!raw.contains("1 TEST WAY"), "address leaked: {raw}");
+        assert!(!raw.contains("ANYTOWN, WA"), "city/state leaked: {raw}");
+        assert!(!raw.contains("99501"), "zip leaked: {raw}");
+        assert!(!raw.contains("PAT SAMPLE"), "card member leaked: {raw}");
+    }
+
+    #[test]
+    fn test_redact_amex_original_data_pii_leaves_non_object() {
+        assert_eq!(redact_amex_original_data_pii("not-json"), "not-json");
+        assert_eq!(redact_amex_original_data_pii("[1,2]"), "[1,2]");
     }
 }
