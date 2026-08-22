@@ -32,13 +32,16 @@ use std::sync::Arc;
 use axum::middleware;
 use rmcp::{
     handler::server::router::tool::ToolRouter,
+    handler::server::wrapper::Parameters,
     model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
+use serde::Serialize;
 use tokio::sync::Mutex;
 use tracing::{info, warn};
 
 use hone_core::db::Database;
+use hone_core::Error as CoreError;
 
 use crate::{auth_middleware, ServerConfig};
 
@@ -68,6 +71,17 @@ impl HoneMcpServer {
     }
 }
 
+/// Serialize a tool implementation result, mapping bad inputs to MCP invalid-params.
+fn tool_result<T: Serialize>(result: hone_core::Result<T>) -> Result<CallToolResult, McpError> {
+    match result {
+        Ok(value) => Ok(CallToolResult::success(vec![ContentBlock::text(
+            serde_json::to_string_pretty(&value).unwrap_or_default(),
+        )])),
+        Err(CoreError::InvalidData(msg)) => Err(McpError::invalid_params(msg, None)),
+        Err(e) => Err(McpError::internal_error(e.to_string(), None)),
+    }
+}
+
 #[tool_handler]
 impl ServerHandler for HoneMcpServer {
     fn get_info(&self) -> ServerInfo {
@@ -94,104 +108,82 @@ impl HoneMcpServer {
     #[tool(
         description = "Search for transactions. Returns matching transactions with amount, date, merchant, and tags."
     )]
-    async fn search_transactions(&self) -> Result<CallToolResult, McpError> {
-        // For now, return a simple result - we'll add parameters later
+    async fn search_transactions(
+        &self,
+        Parameters(params): Parameters<SearchTransactionsParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = SearchTransactionsParams::default();
-        match tools::search_transactions(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::search_transactions(&db, params))
     }
 
     /// Get spending summary by category for a time period
     #[tool(
         description = "Get spending breakdown by category. Returns total spending per category with percentages."
     )]
-    async fn get_spending_summary(&self) -> Result<CallToolResult, McpError> {
+    async fn get_spending_summary(
+        &self,
+        Parameters(params): Parameters<SpendingSummaryParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = SpendingSummaryParams::default();
-        match tools::get_spending_summary(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::get_spending_summary(&db, params))
     }
 
     /// List subscriptions with their status
     #[tool(
         description = "List subscriptions. Shows recurring charges with amount, frequency, and status (active/cancelled/excluded)."
     )]
-    async fn get_subscriptions(&self) -> Result<CallToolResult, McpError> {
+    async fn get_subscriptions(
+        &self,
+        Parameters(params): Parameters<SubscriptionsParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = SubscriptionsParams::default();
-        match tools::get_subscriptions(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::get_subscriptions(&db, params))
     }
 
     /// Get active alerts for potential waste
     #[tool(
         description = "Get waste detection alerts. Shows zombie subscriptions, price increases, duplicates, and spending anomalies."
     )]
-    async fn get_alerts(&self) -> Result<CallToolResult, McpError> {
+    async fn get_alerts(
+        &self,
+        Parameters(params): Parameters<AlertsParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = AlertsParams::default();
-        match tools::get_alerts(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::get_alerts(&db, params))
     }
 
     /// Compare spending between two time periods
     #[tool(
         description = "Compare spending between two periods. Shows changes by category with increase/decrease amounts."
     )]
-    async fn compare_spending(&self) -> Result<CallToolResult, McpError> {
+    async fn compare_spending(
+        &self,
+        Parameters(params): Parameters<CompareSpendingParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = CompareSpendingParams::default();
-        match tools::compare_spending(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::compare_spending(&db, params))
     }
 
     /// Get top merchants by spending
     #[tool(
         description = "Get top merchants by spending amount. Returns merchant name, total spent, and transaction count."
     )]
-    async fn get_merchants(&self) -> Result<CallToolResult, McpError> {
+    async fn get_merchants(
+        &self,
+        Parameters(params): Parameters<MerchantsParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = MerchantsParams::default();
-        match tools::get_merchants(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::get_merchants(&db, params))
     }
 
     /// Get account summary
     #[tool(description = "Get summary of all accounts with recent activity and totals.")]
-    async fn get_account_summary(&self) -> Result<CallToolResult, McpError> {
+    async fn get_account_summary(
+        &self,
+        Parameters(params): Parameters<AccountSummaryParams>,
+    ) -> Result<CallToolResult, McpError> {
         let db = self.db().await;
-        let params = AccountSummaryParams::default();
-        match tools::get_account_summary(&db, params) {
-            Ok(result) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                serde_json::to_string_pretty(&result).unwrap_or_default(),
-            )])),
-            Err(e) => Err(McpError::internal_error(e.to_string(), None)),
-        }
+        tool_result(tools::get_account_summary(&db, params))
     }
 }
 
@@ -381,6 +373,216 @@ mod tests {
             response.status(),
             StatusCode::UNAUTHORIZED,
             "--no-auth must leave MCP open, consistent with the API"
+        );
+    }
+
+    fn seed_period_sensitive_txns(db: &Database) {
+        use chrono::{Duration, Utc};
+        use hone_core::models::{Bank, NewTransaction};
+
+        db.upsert_account("Test Checking", Bank::Chase, None)
+            .unwrap();
+        let today = Utc::now().date_naive();
+        db.insert_transaction(
+            1,
+            &NewTransaction {
+                date: today,
+                description: "NETFLIX.COM".to_string(),
+                amount: -15.99,
+                category: None,
+                import_hash: "mcp_hash_netflix".to_string(),
+                original_data: None,
+                import_format: None,
+                card_member: None,
+                payment_method: None,
+            },
+        )
+        .unwrap();
+        db.insert_transaction(
+            1,
+            &NewTransaction {
+                date: today - Duration::days(35),
+                description: "AMAZON.COM".to_string(),
+                amount: -150.00,
+                category: None,
+                import_hash: "mcp_hash_amazon".to_string(),
+                original_data: None,
+                import_format: None,
+                card_member: None,
+                payment_method: None,
+            },
+        )
+        .unwrap();
+    }
+
+    fn tool_payload(result: &CallToolResult) -> serde_json::Value {
+        let encoded = serde_json::to_value(result).expect("CallToolResult is serializable");
+        let text = encoded["content"][0]["text"]
+            .as_str()
+            .expect("tool result should be a text content block");
+        serde_json::from_str(text).expect("tool text should be JSON")
+    }
+
+    fn schema_properties(tool_name: &str) -> serde_json::Map<String, serde_json::Value> {
+        let server = HoneMcpServer::new(Database::in_memory().unwrap());
+        let tool = server
+            .tool_router
+            .get(tool_name)
+            .unwrap_or_else(|| panic!("{tool_name} should be registered"));
+        let schema = serde_json::to_value(&tool.input_schema).expect("schema is JSON");
+        schema
+            .get("properties")
+            .or_else(|| {
+                schema
+                    .pointer("/$defs")
+                    .and_then(|_| schema.get("properties"))
+            })
+            .and_then(|p| p.as_object())
+            .cloned()
+            .unwrap_or_else(|| {
+                // schemars/rmcp may nest properties under $ref
+                if let Some(name) = schema.get("$ref").and_then(|r| r.as_str()) {
+                    let key = name.rsplit('/').next().unwrap_or_default();
+                    if let Some(props) = schema
+                        .pointer(&format!("/$defs/{key}/properties"))
+                        .or_else(|| schema.pointer(&format!("/definitions/{key}/properties")))
+                    {
+                        return props.as_object().cloned().unwrap_or_default();
+                    }
+                }
+                // Empty-object tools (no advertised args) have `"type": "object"` and no properties.
+                if schema.get("type").and_then(|t| t.as_str()) == Some("object") {
+                    return serde_json::Map::new();
+                }
+                panic!("no properties in {tool_name} schema: {schema}");
+            })
+    }
+
+    #[test]
+    fn mcp_tool_schemas_advertise_period_and_query() {
+        let search = schema_properties("search_transactions");
+        assert!(search.contains_key("query"), "search schema: {search:?}");
+        assert!(search.contains_key("period"), "search schema: {search:?}");
+        assert!(search.contains_key("tag"), "search schema: {search:?}");
+
+        let summary = schema_properties("get_spending_summary");
+        assert!(
+            summary.contains_key("period"),
+            "spending summary schema: {summary:?}"
+        );
+
+        let merchants = schema_properties("get_merchants");
+        assert!(
+            merchants.contains_key("period"),
+            "merchants schema: {merchants:?}"
+        );
+
+        let accounts = schema_properties("get_account_summary");
+        assert!(
+            !accounts.contains_key("include_archived"),
+            "do not advertise unwired include_archived: {accounts:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_search_honors_query_and_period() {
+        let db = Database::in_memory().unwrap();
+        seed_period_sensitive_txns(&db);
+        let server = HoneMcpServer::new(db);
+
+        let default = server
+            .search_transactions(Parameters(SearchTransactionsParams::default()))
+            .await
+            .unwrap();
+        let default_json = tool_payload(&default);
+        let default_count = default_json["total_count"].as_u64().unwrap();
+
+        let all = server
+            .search_transactions(Parameters(SearchTransactionsParams {
+                period: Some("all".to_string()),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let all_json = tool_payload(&all);
+        let all_count = all_json["total_count"].as_u64().unwrap();
+        assert!(
+            all_count > default_count,
+            "period=all should include last-month Amazon; default this-month should not. default={default_json} all={all_json}"
+        );
+
+        let amazon = server
+            .search_transactions(Parameters(SearchTransactionsParams {
+                query: Some("Amazon".to_string()),
+                period: Some("all".to_string()),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let amazon_json = tool_payload(&amazon);
+        assert_eq!(amazon_json["total_count"], 1);
+        assert!(
+            amazon_json["transactions"][0]["description"]
+                .as_str()
+                .unwrap()
+                .contains("AMAZON"),
+            "{amazon_json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_spending_summary_honors_period() {
+        let db = Database::in_memory().unwrap();
+        seed_period_sensitive_txns(&db);
+        let server = HoneMcpServer::new(db);
+
+        let this_month = server
+            .get_spending_summary(Parameters(SpendingSummaryParams::default()))
+            .await
+            .unwrap();
+        let this_month_json = tool_payload(&this_month);
+
+        let all = server
+            .get_spending_summary(Parameters(SpendingSummaryParams {
+                period: Some("all".to_string()),
+                ..Default::default()
+            }))
+            .await
+            .unwrap();
+        let all_json = tool_payload(&all);
+
+        assert_eq!(all_json["period"], "all");
+        assert_ne!(
+            this_month_json["total_spending"], all_json["total_spending"],
+            "non-default period must change the result. this_month={this_month_json} all={all_json}"
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_invalid_period_fails_cleanly() {
+        let server = HoneMcpServer::new(Database::in_memory().unwrap());
+        let err = server
+            .get_spending_summary(Parameters(SpendingSummaryParams {
+                period: Some("not-a-period".to_string()),
+                ..Default::default()
+            }))
+            .await
+            .expect_err("invalid period must not succeed");
+        assert!(
+            err.message.contains("Invalid period"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn mcp_invalid_argument_types_fail_to_deserialize() {
+        let err = serde_json::from_value::<SearchTransactionsParams>(serde_json::json!({
+            "min_amount": "twelve",
+            "period": "all"
+        }));
+        assert!(
+            err.is_err(),
+            "typed tool params must reject a string min_amount"
         );
     }
 }
