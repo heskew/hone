@@ -281,7 +281,7 @@ impl Database {
                 source TEXT DEFAULT 'import',              -- import, receipt, manual
                 expected_amount REAL,                      -- for tip discrepancy tracking
                 archived BOOLEAN DEFAULT 0,                -- hidden from reports/lists
-                original_data TEXT,                        -- JSON of original import data
+                original_data TEXT,                        -- JSON of original import data (Amex PII keys stripped)
                 import_format TEXT,                        -- e.g., chase_csv, amex_csv, receipt, manual
                 card_member TEXT,                          -- cardholder name (from Amex extended format)
                 payment_method TEXT,                       -- apple_pay, google_pay, physical_card, online, etc.
@@ -743,6 +743,32 @@ impl Database {
         // CREATE TABLE IF NOT EXISTS cannot rewrite existing columns/rows.
         conn.execute(
             "UPDATE ollama_metrics SET input_text = NULL WHERE input_text IS NOT NULL",
+            [],
+        )?;
+
+        // Privacy: strip Amex extended-CSV PII from leftover original_data JSON.
+        // Keys match AMEX_ORIGINAL_DATA_PII_KEYS in import.rs.
+        conn.execute(
+            r#"
+            UPDATE transactions
+            SET original_data = json_remove(
+                original_data,
+                '$."Account #"',
+                '$."Address"',
+                '$."City/State"',
+                '$."Zip Code"',
+                '$."Card Member"'
+            )
+            WHERE original_data IS NOT NULL
+              AND json_valid(original_data)
+              AND (
+                json_extract(original_data, '$."Account #"') IS NOT NULL
+                OR json_extract(original_data, '$."Address"') IS NOT NULL
+                OR json_extract(original_data, '$."City/State"') IS NOT NULL
+                OR json_extract(original_data, '$."Zip Code"') IS NOT NULL
+                OR json_extract(original_data, '$."Card Member"') IS NOT NULL
+              )
+            "#,
             [],
         )?;
 

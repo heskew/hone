@@ -4029,4 +4029,61 @@ mod security_tests {
         let cleared = db.clear_merchant_normalized_for_transactions(&[]).unwrap();
         assert_eq!(cleared, 0);
     }
+
+    #[test]
+    fn test_existing_amex_original_data_pii_cleared_on_open() {
+        let db = Database::in_memory().unwrap();
+        let path = db.path().to_string();
+
+        let account_id = db.upsert_account("Amex", Bank::Amex, None).unwrap();
+        // Fictional values only — not production account/address data.
+        let dirty = r#"{"Date":"03/15/2024","Description":"NETFLIX.COM","Card Member":"PAT SAMPLE","Account #":"-00011","Amount":"15.49","Extended Details":"NETFLIX.COM","Appears On Your Statement As":"NETFLIX.COM","Address":"1 TEST WAY","City/State":"ANYTOWN, WA","Zip Code":"99501","Country":"UNITED STATES","Reference":"REF-TEST-001","Category":"Entertainment-Digital"}"#;
+
+        let inserted = db
+            .insert_transaction(
+                account_id,
+                &NewTransaction {
+                    date: chrono::NaiveDate::from_ymd_opt(2024, 3, 15).unwrap(),
+                    description: "NETFLIX.COM".to_string(),
+                    amount: -15.49,
+                    category: Some("Entertainment-Digital".to_string()),
+                    import_hash: "amex-pii-scrub-test".to_string(),
+                    original_data: Some(dirty.to_string()),
+                    import_format: Some("amex_csv".to_string()),
+                    card_member: Some("PAT SAMPLE".to_string()),
+                    payment_method: None,
+                },
+            )
+            .unwrap()
+            .expect("insert should succeed");
+        drop(db);
+
+        // Re-open runs the one-shot json_remove scrub in run_migrations
+        let reopened = Database::new_unencrypted(&path).unwrap();
+        let loaded = reopened.get_transaction(inserted).unwrap().unwrap();
+        let raw = loaded
+            .original_data
+            .as_ref()
+            .expect("original_data should remain");
+        let data: serde_json::Value = serde_json::from_str(raw).unwrap();
+
+        for key in crate::import::AMEX_ORIGINAL_DATA_PII_KEYS {
+            assert!(
+                data.get(*key).is_none(),
+                "{key} must be stripped on open, got {raw}"
+            );
+        }
+
+        assert_eq!(data["Date"], "03/15/2024");
+        assert_eq!(data["Description"], "NETFLIX.COM");
+        assert_eq!(data["Amount"], "15.49");
+        assert_eq!(data["Category"], "Entertainment-Digital");
+        assert_eq!(data["Reference"], "REF-TEST-001");
+
+        // Dedicated column is unchanged; only original_data JSON is scrubbed
+        assert_eq!(loaded.card_member.as_deref(), Some("PAT SAMPLE"));
+        assert!(!raw.contains("-00011"), "account number leaked: {raw}");
+        assert!(!raw.contains("1 TEST WAY"), "address leaked: {raw}");
+        assert!(!raw.contains("PAT SAMPLE"), "card member leaked: {raw}");
+    }
 }
