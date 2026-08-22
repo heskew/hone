@@ -612,6 +612,227 @@ async fn test_auth_with_header() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+// ========== Cloudflare Access JWT Tests ==========
+// Locally minted RS256 tokens — no live Cloudflare credentials.
+
+const TEST_JWT_KID: &str = "test-cf-access-kid";
+const TEST_JWT_TEAM: &str = "hone-test";
+const TEST_JWT_AUD: &str = "test-access-application-aud";
+
+// PKCS#8 RSA-2048 pair generated for these tests only (not a real CF key).
+const TEST_JWT_PRIVATE_PEM: &str = "-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDjvKB5H+pP0yQb
+ysHBTmWZGbMXxdwj7wo3/tsIZcufyHU3V13MOs6v2nX4BbkjrgINYCjJw4ROTvaU
+10gPH2oOHmfXgr5dYD7YOSo+Bp4XwlnnP+K04uSdPEjl09DXu4YwR2k+qbs4f8RZ
+fKakjjLH/+fBKhp+FaX2ZO1DPr3adIpH4/kzv9l/W7Sf+07W5IdCzeUQsseEXwTn
+AknsHXQUlfojDhFc/BiHnBnIEl5cSb9jPakTiCQnSMfs8e6sdTvLolEWDS39Gyrb
+ubtnUbhsaB7NtbLiTwe6kfwTkTXI22xkAOW8LS7jQSZPMK96ywzDbSTG6n0Ff50M
+Tx7P1SC3AgMBAAECggEAAfOeo8XCi7m2qM3puEu8zCgNl44hKLtol8bax3ok6p26
+duWDrMRH2X/AaUIFKi/P7sG+xZsS1bCQi84xbf7yn47Re1TjvNCEovSZH9fRzvNQ
+/9qiZzuSrT7yHJVNWT2K7o0NlUZTS6XSyoK7hnY5Grfe8M3fVR2dgut7PBx1ouwt
+vyHpUuqfLKDHaFm1NvLZ07Wa/E36HSBMRFBM8VvXZBlhSwguj4Nu4SNQH+fvByAk
+FSVWt87wt77cW7/LzZtvit7Ac7+i2hnYs0EYmdMPWnWGZmQwLgJydunsoaP16ZN0
+JH1Vo9mFg9DgzqWtpNgQD44X4aYq1PNbRnhUucOcuQKBgQD2V6P0h14CnAOGPKZi
+6wJLWodyEBo3enfyxJtWuJPV3kFkfA1Rn8A3zqO5OIVlPqx6f6xokcrQL6xerqmj
+zToor8VLz/ouIsSEH8Hm7fsdfkM9fMddUJxjldFimfqhE5C9llkhikf02JLtduGp
+c6MyA98SgfaLIx+9T0P/3nLRLwKBgQDsqkGaZTV6TgqSABBOo9m8kjfR5erjrdKv
+GJYtSl2nqNQntGZp+PLEw5Q02tMP0Y2la8j76nGXHXAmWxChBOyLtuNciA0LEG3W
+I3Rg7l0K0uGPWnpjdQ98rDmkmP9VRczPIZS+1rRlFXTDiZTEXY9GwLNDqQMaDGfi
+bkqOjwR2+QKBgQDOolMgIZBlBfMa3bL/1HuXM7fboNAs6yjEVdCrXKZ9RjJ6FGij
+qCn3ZfkFu/iBJaJOGtxG1sxV9zdSMJaRlOuNB2uqnSkRHA7VeUIP8F2srqW+ZPVi
+O+UCz7/UQq7uAFhv/zaCoNic9DHCyO6fUiV5JbAveR6SNYNBK8UxUqni9wKBgH5X
+HZJ4uSXDh60NT6dLnS8nt5jb7psA7ln+/BzNeFXKsQdJLOshtSgJaJMWxlnJep52
+feLN8znCw14WezgaUtT7G0EIeD4R1TDd2IDufskKbtOCb5espEnf/x25d4VkL8Pb
+n3aJU+AqphzE06BIefZBZPGXxkofmU2tpyuXecCxAoGBAJoBVAqaRY3RDeAHc2TJ
+9E25tu6ax4khxb9xH5sB9ndB01VV7DjgNyMZVQjzxjKutB2Pyi5J90AVX69ULpz4
+OFtoxhWAYbs9KendjeJ2eMDG3LYA4fIMbjk1mBui9oefLeFXdxehe5bw6iIq89wZ
+cRyPvxZ6KEPH9XpDH6HHxv47
+-----END PRIVATE KEY-----";
+
+const TEST_JWT_PUBLIC_PEM: &str = "-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA47ygeR/qT9MkG8rBwU5l
+mRmzF8XcI+8KN/7bCGXLn8h1N1ddzDrOr9p1+AW5I64CDWAoycOETk72lNdIDx9q
+Dh5n14K+XWA+2DkqPgaeF8JZ5z/itOLknTxI5dPQ17uGMEdpPqm7OH/EWXympI4y
+x//nwSoafhWl9mTtQz692nSKR+P5M7/Zf1u0n/tO1uSHQs3lELLHhF8E5wJJ7B10
+FJX6Iw4RXPwYh5wZyBJeXEm/Yz2pE4gkJ0jH7PHurHU7y6JRFg0t/Rsq27m7Z1G4
+bGgezbWy4k8HupH8E5E1yNtsZADlvC0u40EmTzCvessMw20kxup9BX+dDE8ez9Ug
+twIDAQAB
+-----END PUBLIC KEY-----";
+
+#[derive(serde::Serialize)]
+struct TestJwtClaims {
+    email: Option<String>,
+    sub: String,
+    aud: String,
+    iss: String,
+    exp: i64,
+    iat: i64,
+}
+
+fn test_cf_jwt_config() -> CfJwtConfig {
+    CfJwtConfig {
+        team_name: Some(TEST_JWT_TEAM.to_string()),
+        audience: Some(TEST_JWT_AUD.to_string()),
+        cached_keys: None,
+    }
+}
+
+fn test_cf_jwk() -> jsonwebtoken::jwk::Jwk {
+    use jsonwebtoken::{Algorithm, DecodingKey};
+    let decoding_key = DecodingKey::from_rsa_pem(TEST_JWT_PUBLIC_PEM.as_bytes())
+        .expect("test public key should parse");
+    let mut jwk = jsonwebtoken::jwk::Jwk::from_decoding_key(&decoding_key, Some(Algorithm::RS256))
+        .expect("test public key should convert to JWK");
+    jwk.common.key_id = Some(TEST_JWT_KID.to_string());
+    jwk
+}
+
+fn test_cf_issuer() -> String {
+    format!("https://{}.cloudflareaccess.com", TEST_JWT_TEAM)
+}
+
+fn mint_test_jwt(
+    claims: &TestJwtClaims,
+    kid: Option<&str>,
+    alg: jsonwebtoken::Algorithm,
+) -> String {
+    use jsonwebtoken::{encode, EncodingKey, Header};
+    let mut header = Header::new(alg);
+    header.kid = kid.map(|k| k.to_string());
+    // HS256 is only used to prove RS256-only validation rejects other algorithms.
+    let key = if alg == jsonwebtoken::Algorithm::HS256 {
+        EncodingKey::from_secret(b"not-an-rsa-key")
+    } else {
+        EncodingKey::from_rsa_pem(TEST_JWT_PRIVATE_PEM.as_bytes())
+            .expect("test private key should parse")
+    };
+    encode(&header, claims, &key).expect("test token should encode")
+}
+
+fn valid_test_claims() -> TestJwtClaims {
+    let now = chrono::Utc::now().timestamp();
+    TestJwtClaims {
+        email: Some("user@example.com".to_string()),
+        sub: "cf-access-identity".to_string(),
+        aud: TEST_JWT_AUD.to_string(),
+        iss: test_cf_issuer(),
+        exp: now + 3600,
+        iat: now,
+    }
+}
+
+#[test]
+fn test_cf_jwt_valid_rs256_accepted() {
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+    let email = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect("valid CF Access token should be accepted");
+    assert_eq!(email, "user@example.com");
+}
+
+#[test]
+fn test_cf_jwt_falls_back_to_sub_when_email_missing() {
+    let mut claims = valid_test_claims();
+    claims.email = None;
+    let token = mint_test_jwt(&claims, Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256);
+    let identity = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect("token with sub only should be accepted");
+    assert_eq!(identity, "cf-access-identity");
+}
+
+#[test]
+fn test_cf_jwt_rejects_wrong_aud() {
+    let mut claims = valid_test_claims();
+    claims.aud = "some-other-application".to_string();
+    let token = mint_test_jwt(&claims, Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256);
+    let err = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("wrong aud should be rejected");
+    assert!(err.contains("JWT validation failed"), "{err}");
+}
+
+#[test]
+fn test_cf_jwt_rejects_wrong_iss() {
+    let mut claims = valid_test_claims();
+    claims.iss = "https://other-team.cloudflareaccess.com".to_string();
+    let token = mint_test_jwt(&claims, Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256);
+    let err = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("wrong iss should be rejected");
+    assert!(err.contains("JWT validation failed"), "{err}");
+}
+
+#[test]
+fn test_cf_jwt_rejects_wrong_alg() {
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::HS256,
+    );
+    let err = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("HS256 token should be rejected when RS256 is required");
+    assert!(err.contains("JWT validation failed"), "{err}");
+}
+
+#[test]
+fn test_cf_jwt_rejects_expired() {
+    let mut claims = valid_test_claims();
+    // Well past jsonwebtoken's default 60s exp leeway
+    claims.exp = chrono::Utc::now().timestamp() - 3600;
+    claims.iat = claims.exp - 3600;
+    let token = mint_test_jwt(&claims, Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256);
+    let err = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("expired token should be rejected");
+    assert!(err.contains("JWT validation failed"), "{err}");
+}
+
+#[test]
+fn test_cf_jwt_rejects_invalid_signature() {
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+    let (head, rest) = token.rsplit_once('.').expect("jwt has signature");
+    // Flip a character in the signature so the header/claims stay parseable.
+    let mut sig = rest.to_string();
+    let flipped = if sig.ends_with('A') { 'B' } else { 'A' };
+    sig.pop();
+    sig.push(flipped);
+    let tampered = format!("{head}.{sig}");
+    let err = validate_cf_jwt_with_keys(&tampered, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("tampered signature should be rejected");
+    assert!(err.contains("JWT validation failed"), "{err}");
+}
+
+#[test]
+fn test_cf_jwt_rejects_missing_signature() {
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+    let unsigned = token
+        .rsplit_once('.')
+        .map(|(h, _)| format!("{h}."))
+        .unwrap();
+    let err = validate_cf_jwt_with_keys(&unsigned, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("token without signature should be rejected");
+    assert!(
+        err.contains("JWT validation failed") || err.contains("Invalid JWT header"),
+        "{err}"
+    );
+}
+
+#[test]
+fn test_cf_jwt_rejects_missing_kid() {
+    let token = mint_test_jwt(&valid_test_claims(), None, jsonwebtoken::Algorithm::RS256);
+    let err = validate_cf_jwt_with_keys(&token, &test_cf_jwt_config(), &[test_cf_jwk()])
+        .expect_err("token without kid should be rejected");
+    assert!(err.contains("missing key ID"), "{err}");
+}
+
 // ========== New Reports API Tests ==========
 
 #[tokio::test]
