@@ -140,8 +140,46 @@ fn is_local_hostname(host: &str) -> bool {
     if host.ends_with(".docker.internal") {
         return true;
     }
-    // Docker Compose service names and short LAN names (`ollama`, `mac`).
-    !host.contains('.')
+    // Docker Compose / short LAN names (`ollama`, `mac`). Not all-numeric,
+    // hex IPv4 (`0x8080808`), or colon remnants from unbracketed IPv6 —
+    // those fail IpAddr parse but WHATWG/reqwest still treat them as IPs.
+    is_single_label_dns_name(&host)
+}
+
+/// DNS label that is safe to treat as a local short name.
+///
+/// Rejects decimal IPv4 (`134744072`), hex IPv4 (`0x8080808`), and any
+/// colon-containing remnant so public addresses cannot sneak through as
+/// "no-dot, therefore LAN".
+fn is_single_label_dns_name(host: &str) -> bool {
+    if host.contains(':') || looks_like_integer_ipv4(host) {
+        return false;
+    }
+    is_dns_label(host)
+}
+
+fn is_dns_label(host: &str) -> bool {
+    let bytes = host.as_bytes();
+    if bytes.is_empty() || bytes.len() > 63 {
+        return false;
+    }
+    let first = bytes[0];
+    let last = bytes[bytes.len() - 1];
+    if !first.is_ascii_alphanumeric() || !last.is_ascii_alphanumeric() {
+        return false;
+    }
+    bytes
+        .iter()
+        .all(|b| b.is_ascii_alphanumeric() || *b == b'-')
+}
+
+fn looks_like_integer_ipv4(host: &str) -> bool {
+    if host.bytes().all(|b| b.is_ascii_digit()) {
+        return true;
+    }
+    host.strip_prefix("0x")
+        .or_else(|| host.strip_prefix("0X"))
+        .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_hexdigit()))
 }
 
 fn is_local_ip(ip: IpAddr) -> bool {
@@ -241,6 +279,43 @@ mod tests {
         // 0.0.0.0 / :: are bind addresses, not a destination you talk to.
         assert!(!is_local_ai_host("http://0.0.0.0:11434"));
         assert!(!is_local_ai_host("http://[::]:11434"));
+    }
+
+    #[test]
+    fn integer_ipv4_and_unbracketed_ipv6_refused_without_opt_in() {
+        // WHATWG/reqwest parse 134744072 / 0x8080808 as 8.8.8.8.
+        for url in [
+            "http://134744072",
+            "http://134744072:11434",
+            "http://0x8080808",
+            "http://0X8080808:11434",
+            "http://2001:4860:4860::8888",
+            "http://fe80::1",
+        ] {
+            assert!(!is_local_ai_host(url), "expected refused: {url}");
+            let err = ensure_ai_host_allowed_with(url, false)
+                .expect_err(&format!("must be refused without opt-in: {url}"));
+            let msg = err.to_string();
+            assert!(
+                msg.contains(ALLOW_REMOTE_AI_ENV),
+                "error should name the opt-in: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_label_lan_and_docker_internal_still_local() {
+        for url in [
+            "http://ollama:11434",
+            "http://mac",
+            "http://hone-ai",
+            "http://host.docker.internal:11434",
+            "http://gateway.docker.internal",
+        ] {
+            assert!(is_local_ai_host(url), "expected local: {url}");
+            ensure_ai_host_allowed_with(url, false)
+                .unwrap_or_else(|e| panic!("should stay local ({url}): {e}"));
+        }
     }
 
     #[test]
