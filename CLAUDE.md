@@ -81,7 +81,7 @@ Key tables (see `docs/SPLITS_DESIGN.md` for entity/split schema):
 - `training_experiments` - Fine-tuning experiment tracking
 - `reprocess_runs`, `reprocess_snapshots` - Reprocess comparison
 - `insight_findings` - Proactive financial insights
-- `ollama_metrics` - AI call tracking (latency, success, tool calls metadata for explore queries)
+- `ollama_metrics` - AI call tracking (latency, success, tool calls metadata for explore queries; does not persist prompt/txn text)
 
 ## Current State
 

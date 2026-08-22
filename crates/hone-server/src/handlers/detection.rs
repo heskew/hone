@@ -776,7 +776,7 @@ async fn normalize_merchants(db: &Database, ollama: &AIClient, limit: i64, sessi
                     error_message: None,
                     confidence: None,
                     transaction_id: tx_ids.first().copied(),
-                    input_text: Some(description.clone()),
+                    input_text: None,
                     result_text: Some(normalized.clone()),
                     metadata: None,
                 };
@@ -809,7 +809,7 @@ async fn normalize_merchants(db: &Database, ollama: &AIClient, limit: i64, sessi
                     error_message: Some(e.to_string()),
                     confidence: None,
                     transaction_id: tx_ids.first().copied(),
-                    input_text: Some(description.clone()),
+                    input_text: None,
                     result_text: None,
                     metadata: None,
                 };

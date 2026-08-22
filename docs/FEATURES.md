@@ -117,7 +117,7 @@ See [design/receipts.md](design/receipts.md) for full workflow.
 - Receipt-to-transaction matching evaluation
 - Duplicate detection reasoning
 - Spending anomaly explanations with re-analysis
-- Metrics tracking (latency, success rate, accuracy)
+- Metrics tracking (latency, success rate, accuracy; prompt/txn text is not persisted)
 - AI Metrics page with "Load more" pagination for recent calls
 - AI Orchestrator for agentic analysis (optional, uses tool-calling)
 
