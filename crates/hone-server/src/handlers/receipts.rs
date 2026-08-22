@@ -298,7 +298,7 @@ pub async fn upload_pending_receipt(
     // Compute content hash for deduplication
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
-    let content_hash = format!("{:x}", hasher.finalize());
+    let content_hash = hex::encode(hasher.finalize());
 
     // Check for duplicate receipt
     if let Some(existing) = state.db.get_receipt_by_hash(&content_hash)? {

@@ -70,7 +70,7 @@ pub async fn cmd_receipts_add(db: &Database, file: &Path) -> Result<()> {
     // Compute content hash
     let mut hasher = Sha256::new();
     hasher.update(&image_data);
-    let content_hash = format!("{:x}", hasher.finalize());
+    let content_hash = hex::encode(hasher.finalize());
 
     // Check for duplicate
     if let Some(existing) = db.get_receipt_by_hash(&content_hash)? {

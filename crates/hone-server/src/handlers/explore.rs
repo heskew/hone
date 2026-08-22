@@ -91,7 +91,7 @@ impl ExploreSessionManager {
         let mut hasher = Sha256::new();
         hasher.update(timestamp.to_le_bytes());
         let hash = hasher.finalize();
-        let session_id = format!("exp_{:x}", hash)[..20].to_string();
+        let session_id = format!("exp_{}", hex::encode(hash))[..20].to_string();
 
         let mut sessions = self.sessions.write().await;
 
