@@ -26,7 +26,10 @@ sha2.workspace = true            # Content hashing
 hex.workspace = true             # Digest hex encoding
 base64 = "0.22"                  # Receipt image encoding
 subtle = "2.5"                   # Constant-time comparison for API keys
-jsonwebtoken = "11.0"             # Cloudflare Access JWT validation
+# rust_crypto: required since jsonwebtoken 10 (no default backend).
+# Pure-Rust, matches reqwest's rustls choice for portable/multi-arch builds.
+# aws_lc_rs would pull native aws-lc C/asm and is heavier for Docker amd64+arm64.
+jsonwebtoken = { version = "11.0", features = ["rust_crypto"] }
 
 # HTTP client (for fetching CF public keys)
 reqwest.workspace = true         # Fetch Cloudflare Access public keys

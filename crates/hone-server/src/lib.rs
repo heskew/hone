@@ -255,8 +255,35 @@ pub(crate) async fn auth_middleware(
 /// Validate a Cloudflare Access JWT
 ///
 /// Fetches public keys from Cloudflare and validates the JWT signature, expiration,
-/// and audience claim.
+/// issuer, and audience claim. Cloudflare Access tokens are RS256.
 async fn validate_cf_jwt(token: &str, config: &CfJwtConfig) -> Result<String, String> {
+    let team_name = config
+        .team_name
+        .as_ref()
+        .ok_or("Team name not configured")?;
+
+    // Fetch public keys from Cloudflare
+    let certs_url = format!(
+        "https://{}.cloudflareaccess.com/cdn-cgi/access/certs",
+        team_name
+    );
+
+    let keys = fetch_cf_public_keys(&certs_url)
+        .await
+        .map_err(|e| format!("Failed to fetch CF public keys: {}", e))?;
+
+    validate_cf_jwt_with_keys(token, config, &keys)
+}
+
+/// Validate a Cloudflare Access JWT against an already-fetched JWK set.
+///
+/// Isolated from HTTP so unit tests can mint local RS256 tokens without
+/// live Cloudflare credentials.
+fn validate_cf_jwt_with_keys(
+    token: &str,
+    config: &CfJwtConfig,
+    keys: &[jsonwebtoken::jwk::Jwk],
+) -> Result<String, String> {
     use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
 
     let team_name = config
@@ -269,16 +296,6 @@ async fn validate_cf_jwt(token: &str, config: &CfJwtConfig) -> Result<String, St
     let header = decode_header(token).map_err(|e| format!("Invalid JWT header: {}", e))?;
     let kid = header.kid.ok_or("JWT missing key ID (kid)")?;
 
-    // Fetch public keys from Cloudflare
-    let certs_url = format!(
-        "https://{}.cloudflareaccess.com/cdn-cgi/access/certs",
-        team_name
-    );
-
-    let keys = fetch_cf_public_keys(&certs_url)
-        .await
-        .map_err(|e| format!("Failed to fetch CF public keys: {}", e))?;
-
     // Find the key matching the JWT's kid
     let jwk = keys
         .iter()
@@ -288,7 +305,7 @@ async fn validate_cf_jwt(token: &str, config: &CfJwtConfig) -> Result<String, St
     // Convert JWK to decoding key
     let decoding_key = DecodingKey::from_jwk(jwk).map_err(|e| format!("Invalid JWK: {}", e))?;
 
-    // Set up validation
+    // Set up validation (RS256 + aud + iss; exp is required by default)
     let mut validation = Validation::new(Algorithm::RS256);
     validation.set_audience(&[audience]);
     validation.set_issuer(&[format!("https://{}.cloudflareaccess.com", team_name)]);
