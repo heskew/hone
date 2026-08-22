@@ -45,13 +45,8 @@ pub async fn cmd_serve(
         println!("   MCP server: http://{}:{}/mcp", host, mcp);
     }
 
-    // Parse API keys from environment (comma-separated)
-    let api_keys: Vec<String> = std::env::var("HONE_API_KEYS")
-        .unwrap_or_default()
-        .split(',')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect();
+    let api_keys = parse_env_keys("HONE_API_KEYS");
+    let mcp_keys = parse_env_keys("HONE_MCP_KEYS");
 
     // Parse Cloudflare Access JWT configuration
     let cf_team_name = std::env::var("CF_TEAM_NAME").ok().filter(|s| !s.is_empty());
@@ -78,8 +73,14 @@ pub async fn cmd_serve(
         }
         if !api_keys.is_empty() {
             println!(
-                "   🔑 API keys: {} configured (HONE_API_KEYS; API and MCP)",
+                "   🔑 API keys: {} configured (HONE_API_KEYS; /api and /mcp)",
                 api_keys.len()
+            );
+        }
+        if !mcp_keys.is_empty() {
+            println!(
+                "   🔑 MCP keys: {} configured (HONE_MCP_KEYS; /mcp only)",
+                mcp_keys.len()
             );
         }
         if !trusted_networks.is_empty() {
@@ -119,6 +120,7 @@ pub async fn cmd_serve(
         require_auth: !no_auth,
         allowed_origins: vec![],
         api_keys,
+        mcp_keys,
         cf_jwt: hone_server::CfJwtConfig {
             team_name: cf_team_name,
             audience: cf_aud_tag,
@@ -180,6 +182,19 @@ fn warn_if_remote_ai_hosts() {
     }
 }
 
+/// Parse comma-separated Bearer keys from an environment variable.
+fn parse_env_keys(var: &str) -> Vec<String> {
+    parse_comma_separated_keys(&std::env::var(var).unwrap_or_default())
+}
+
+fn parse_comma_separated_keys(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 /// `--no-auth` skips `auth_middleware`. That is only safe when the process
 /// cannot be reached from another machine, i.e. the bind host is loopback.
 /// Non-loopback binds (including `0.0.0.0` / `::` used for Docker published
@@ -236,6 +251,16 @@ fn resolve_static_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_comma_separated_keys_trims_and_skips_empty() {
+        assert_eq!(
+            parse_comma_separated_keys(" a, b, ,c "),
+            vec!["a", "b", "c"]
+        );
+        assert!(parse_comma_separated_keys("").is_empty());
+        assert!(parse_comma_separated_keys("  , , ").is_empty());
+    }
 
     #[test]
     fn loopback_hosts_detected() {
@@ -362,6 +387,23 @@ mod tests {
         assert!(
             contents.contains("ANTHROPIC_COMPATIBLE_HOST"),
             "deployment.md must document ANTHROPIC_COMPATIBLE_HOST"
+        );
+        assert!(
+            contents.contains("HONE_MCP_KEYS"),
+            "deployment.md must document HONE_MCP_KEYS"
+        );
+    }
+
+    #[test]
+    fn mcp_docs_mention_scoped_keys() {
+        let contents = read_repo_file("docs/mcp.md");
+        assert!(
+            contents.contains("HONE_MCP_KEYS"),
+            "mcp.md must document HONE_MCP_KEYS"
+        );
+        assert!(
+            contents.contains("rejected on `/api`"),
+            "mcp.md must say MCP keys are rejected on /api"
         );
     }
 

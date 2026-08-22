@@ -81,8 +81,12 @@ pub struct ServerConfig {
     /// Allowed CORS origins (empty = same-origin only in production)
     pub allowed_origins: Vec<String>,
     /// API keys for internal service authentication (alternative to Cloudflare Access)
-    /// Format: "Bearer <key>" in Authorization header
+    /// Format: "Bearer <key>" in Authorization header.
+    /// Accepted on `/api` and `/mcp` (full-access credential).
     pub api_keys: Vec<String>,
+    /// MCP-only Bearer keys (`HONE_MCP_KEYS`). Accepted on `/mcp`, rejected on `/api`.
+    /// Use these for LLM clients so a leaked token cannot call write APIs.
+    pub mcp_keys: Vec<String>,
     /// Cloudflare Access JWT validation config (optional but recommended)
     pub cf_jwt: CfJwtConfig,
     /// Trusted networks that bypass authentication (e.g., "192.168.1.0/24", "10.0.0.5")
@@ -99,6 +103,7 @@ impl Default for ServerConfig {
             require_auth: true,
             allowed_origins: vec![],
             api_keys: vec![],
+            mcp_keys: vec![],
             cf_jwt: CfJwtConfig::default(),
             trusted_networks: vec![],
             trusted_proxies: vec![],
@@ -140,6 +145,10 @@ pub struct AppState {
 /// is exposed directly to the internet.
 ///
 /// **API keys**: Compared using constant-time comparison to prevent timing attacks.
+/// Accepted on `/api` and `/mcp`.
+///
+/// **MCP keys**: Same comparison. Accepted only on `/mcp` so LLM-client tokens
+/// cannot call write endpoints on `/api`.
 pub(crate) async fn auth_middleware(
     State(config): State<Arc<ServerConfig>>,
     request: Request,
@@ -229,18 +238,17 @@ pub(crate) async fn auth_middleware(
         return next.run(request).await;
     }
 
-    // Check for API key in Authorization header (Bearer token)
-    // Uses constant-time comparison to prevent timing attacks
-    let api_key_valid = request
+    // Bearer tokens are scoped: MCP-only keys cannot open /api write routes.
+    // API keys still work on /mcp so existing HONE_API_KEYS setups keep working.
+    let path = request.uri().path();
+    if let Some(user) = request
         .headers()
         .get(AUTHORIZATION_HEADER)
         .and_then(|v| v.to_str().ok())
         .and_then(|auth| auth.strip_prefix("Bearer "))
-        .map(|key| validate_api_key(key, &config.api_keys))
-        .unwrap_or(false);
-
-    if api_key_valid {
-        info!(user = "api-key", path = %request.uri().path(), "Authenticated via API key");
+        .and_then(|key| accept_bearer(path, key, &config))
+    {
+        info!(user, path = %path, "Authenticated via Bearer token");
         return next.run(request).await;
     }
 
@@ -352,6 +360,32 @@ async fn fetch_cf_public_keys(url: &str) -> Result<Vec<jsonwebtoken::jwk::Jwk>, 
         .map_err(|e| format!("Failed to parse JWK set: {}", e))?;
 
     Ok(jwk_set.keys)
+}
+
+fn is_mcp_path(path: &str) -> bool {
+    path == "/mcp" || path.starts_with("/mcp/")
+}
+
+/// Label for a Bearer token that is valid on this path, or `None` to reject.
+///
+/// `HONE_MCP_KEYS` match only `/mcp`. `HONE_API_KEYS` match `/api` and `/mcp`.
+fn accept_bearer(path: &str, token: &str, config: &ServerConfig) -> Option<&'static str> {
+    let api_ok = validate_api_key(token, &config.api_keys);
+    let mcp_ok = validate_api_key(token, &config.mcp_keys);
+    if is_mcp_path(path) {
+        if mcp_ok {
+            return Some("mcp-key");
+        }
+        if api_ok {
+            return Some("api-key");
+        }
+        return None;
+    }
+    if api_ok {
+        Some("api-key")
+    } else {
+        None
+    }
 }
 
 /// Validate an API key against the configured keys using constant-time comparison

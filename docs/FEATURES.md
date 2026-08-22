@@ -42,7 +42,8 @@ React frontend with Tailwind styling:
 See `docs/deployment.md` for details:
 - Cloudflare Access JWT validation (recommended for production)
 - Cloudflare Access header (fallback when behind CF Tunnel)
-- API keys for machine-to-machine auth (`HONE_API_KEYS`)
+- API keys for machine-to-machine auth (`HONE_API_KEYS`; `/api` and `/mcp`)
+- MCP-only keys for LLM clients (`HONE_MCP_KEYS`; accepted on `/mcp`, rejected on `/api`)
 - Trusted networks for local access without auth (`HONE_TRUSTED_NETWORKS`)
 - Trusted proxies for extracting real client IP (`HONE_TRUSTED_PROXIES`)
 - MCP (`--mcp-port`) uses the same `auth_middleware` as `/api`; `--no-auth` leaves both open and is accepted only on a loopback bind

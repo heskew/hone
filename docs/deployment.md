@@ -48,22 +48,24 @@ Access Hone at http://localhost:3000
 | `HONE_ALLOW_REMOTE_AI` | No | Set to `1` to allow a non-local `OLLAMA_HOST` or `ANTHROPIC_COMPATIBLE_HOST` (warns at startup) |
 | `CF_TEAM_NAME` | Recommended | Cloudflare team name for JWT validation |
 | `CF_AUD_TAG` | Recommended | Cloudflare Access application audience tag |
-| `HONE_API_KEYS` | No | Comma-separated API keys for internal service auth |
+| `HONE_API_KEYS` | No | Comma-separated API keys for `/api` (also accepted on `/mcp`) |
+| `HONE_MCP_KEYS` | No | Comma-separated MCP-only keys (accepted on `/mcp`, rejected on `/api`) |
 | `HONE_TRUSTED_NETWORKS` | No | Comma-separated IPs/CIDRs that bypass auth |
 | `HONE_TRUSTED_PROXIES` | No | Comma-separated proxy IPs/CIDRs to trust X-Forwarded-For from |
 
 ### Authentication
 
-Hone supports four authentication methods:
+Hone supports these authentication methods:
 
 1. **Cloudflare Access JWT** (recommended) - Cryptographically validates `Cf-Access-Jwt-Assertion` header
 2. **Cloudflare Access header** (fallback) - Trusts `CF-Access-Authenticated-User-Email` header
-3. **API Keys** - For internal services, use `Authorization: Bearer <key>` header
-4. **Trusted Networks** - Requests from configured IP addresses/subnets bypass auth
+3. **API Keys** - For internal services, use `Authorization: Bearer <key>` header (`HONE_API_KEYS`)
+4. **MCP Keys** - For LLM clients, `HONE_MCP_KEYS` are accepted on `/mcp` and rejected on `/api`
+5. **Trusted Networks** - Requests from configured IP addresses/subnets bypass auth
 
-The MCP server (`--mcp-port`) uses this same authentication. `--no-auth` leaves both `/api` and `/mcp` open, and is accepted only when the server binds to loopback (`127.0.0.1`, `::1`, or `localhost`).
+The MCP server (`--mcp-port`) uses this same `auth_middleware`. Bearer tokens are scoped: `HONE_MCP_KEYS` work only on `/mcp`; `HONE_API_KEYS` work on `/api` and still on `/mcp` so a single key remains enough if you do not want the split. Cloudflare Access and trusted networks still cover both. `--no-auth` leaves both `/api` and `/mcp` open, and is accepted only when the server binds to loopback (`127.0.0.1`, `::1`, or `localhost`).
 
-Docker published ports must bind to `0.0.0.0` (or `::`) inside the container, so they cannot use `--no-auth`. Compose already omits that flag. For local Docker access without Cloudflare, set `HONE_TRUSTED_NETWORKS` or `HONE_API_KEYS` in `.env` (see Trusted Networks Setup and API Key Setup below).
+Docker published ports must bind to `0.0.0.0` (or `::`) inside the container, so they cannot use `--no-auth`. Compose already omits that flag. For local Docker access without Cloudflare, set `HONE_TRUSTED_NETWORKS` or `HONE_API_KEYS` in `.env` (see Trusted Networks Setup and API Key Setup below). For MCP clients, prefer `HONE_MCP_KEYS` (see MCP Key Setup).
 
 > **Keep `--host 0.0.0.0` and `--static-dir /app/ui/dist` when editing `command:`**
 > — without `--host` the published port won't work; without `--static-dir` the
@@ -157,6 +159,31 @@ For machine-to-machine auth (e.g., Mac training script accessing Pi server):
 - Store keys securely; treat them like passwords
 - Rotate keys if compromised
 - Multiple keys supported (comma-separated) for key rotation
+- An API key also works on `/mcp`. Use `HONE_MCP_KEYS` for LLM clients when you do not want that key to call `/api`
+
+### MCP Key Setup
+
+For LLM / MCP clients (Claude Desktop, custom agents) that should not be able to call write APIs:
+
+1. Generate a key (64 hex chars = 256 bits):
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. Add to `.env` on the Pi:
+   ```
+   HONE_MCP_KEYS=your-generated-mcp-key
+   ```
+
+3. Use the key only against the MCP port:
+   ```bash
+   curl -H "Authorization: Bearer your-generated-mcp-key" \
+     -H "Content-Type: application/json" \
+     -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+     http://pi:3001/mcp
+   ```
+
+That same Bearer token is rejected on `/api`. Cloudflare Access and trusted networks are unchanged: they still authenticate both ports. See [MCP Server](/mcp/#authentication).
 
 ### Trusted Networks Setup
 
