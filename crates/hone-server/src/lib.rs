@@ -5,6 +5,7 @@
 //! Security features:
 //! - Cloudflare Access authentication (secure by default; CLI `--no-auth` is loopback-only)
 //! - Restrictive CORS policy
+//! - CSRF protection on `/api` (`CsrfLayer`: Sec-Fetch-Site, Origin, Origin/Host)
 //! - Input validation (pagination limits, file size limits)
 //! - Full audit logging for all API access (reads and writes)
 //! - Sanitized error responses
@@ -21,7 +22,8 @@ use axum::{
 };
 use serde::Serialize;
 use tower_http::{
-    cors::CorsLayer, services::ServeDir, set_header::SetResponseHeaderLayer, trace::TraceLayer,
+    cors::CorsLayer, csrf::CsrfLayer, services::ServeDir, set_header::SetResponseHeaderLayer,
+    trace::TraceLayer,
 };
 use tracing::{error, info, warn};
 
@@ -897,7 +899,10 @@ pub fn create_router_with_options(
         .route(
             "/explore/session/{id}",
             get(handlers::get_explore_session).delete(handlers::delete_explore_session),
-        );
+        )
+        // CSRF: trusted-net (IP) and CF-header sessions are browser-invocable.
+        // Bearer/curl/MCP clients that send neither Origin nor Sec-Fetch-Site pass.
+        .layer(csrf_layer(&config.allowed_origins));
 
     // Build CORS layer
     let cors = if config.allowed_origins.is_empty() {
@@ -969,6 +974,29 @@ pub fn create_router_with_options(
     }
 
     app
+}
+
+/// Build CSRF middleware from the CORS origin allow-list.
+///
+/// `CsrfLayer` (Go 1.25-style) allows a request if any of: safe method;
+/// `Origin` is trusted; `Sec-Fetch-Site` is `same-origin` or `none`; neither
+/// `Origin` nor `Sec-Fetch-Site` is present (non-browser clients); or
+/// `Origin`'s host matches `Host`. Invalid configured origins are skipped.
+fn csrf_layer(allowed_origins: &[String]) -> CsrfLayer {
+    let mut layer = CsrfLayer::new();
+    for origin in allowed_origins {
+        match layer.clone().add_trusted_origin(origin.as_str()) {
+            Ok(updated) => layer = updated,
+            Err(e) => {
+                warn!(
+                    origin = %origin,
+                    error = %e,
+                    "Ignoring invalid CSRF trusted origin"
+                );
+            }
+        }
+    }
+    layer
 }
 
 /// Start the server

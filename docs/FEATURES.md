@@ -46,6 +46,7 @@ See `docs/deployment.md` for details:
 - Trusted networks for local access without auth (`HONE_TRUSTED_NETWORKS`)
 - Trusted proxies for extracting real client IP (`HONE_TRUSTED_PROXIES`)
 - MCP (`--mcp-port`) uses the same `auth_middleware` as `/api`; `--no-auth` leaves both open and is accepted only on a loopback bind
+- CSRF on `/api` via `tower-http` `CsrfLayer` (trusted-net and CF-header browser sessions; Bearer/MCP clients without `Origin` still work)
 
 ## Tags System
 

@@ -5545,6 +5545,110 @@ async fn test_auth_whitespace_only_header() {
 }
 
 #[tokio::test]
+async fn test_csrf_rejects_cross_site_state_change() {
+    let app = setup_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tags")
+                .header("host", "hone.example")
+                .header("origin", "https://evil.example")
+                .header("sec-fetch-site", "cross-site")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"Evil"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn test_csrf_allows_same_origin_state_change() {
+    let app = setup_test_app();
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tags")
+                .header("host", "hone.example")
+                .header("origin", "https://hone.example")
+                .header("sec-fetch-site", "same-origin")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"SameOrigin"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = get_body_json(response).await;
+    assert_eq!(json["name"], "SameOrigin");
+}
+
+#[tokio::test]
+async fn test_csrf_allows_bearer_without_browser_origin() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let config = ServerConfig {
+        require_auth: true,
+        api_keys: vec!["test-key-for-csrf".to_string()],
+        ..Default::default()
+    };
+    let app = create_router(db, None, config);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tags")
+                .header("authorization", "Bearer test-key-for-csrf")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"FromApiClient"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = get_body_json(response).await;
+    assert_eq!(json["name"], "FromApiClient");
+}
+
+#[tokio::test]
+async fn test_csrf_allows_cf_header_same_origin_post() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let config = ServerConfig {
+        require_auth: true,
+        ..Default::default()
+    };
+    let app = create_router(db, None, config);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tags")
+                .header("host", "hone.example")
+                .header("origin", "https://hone.example")
+                .header("sec-fetch-site", "same-origin")
+                .header("cf-access-authenticated-user-email", "test@example.com")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"CfUser"}"#))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
 async fn test_sql_injection_in_query_params() {
     let app = setup_test_app();
 

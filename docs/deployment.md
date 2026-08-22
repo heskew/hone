@@ -67,6 +67,29 @@ Docker published ports must bind to `0.0.0.0` (or `::`) inside the container, so
 > UI 404s after bind works. The startup log confirms the bind address on the
 > `Listening:` line and the UI path on `Static files:`.
 
+### CSRF Protection
+
+Hone does not set auth cookies. Bearer tokens are not sent by the browser unless JavaScript adds them, so classic cookie CSRF does not apply to API-key clients.
+
+Two session types **are** browser-invocable and would otherwise accept a cross-site form `POST`:
+
+- **Trusted networks** — auth is the client IP. A page on another origin opened on a LAN machine can `POST` to Hone and be treated as authenticated.
+- **Cloudflare Access header / JWT** — the browser sends the Access cookie to the Hone hostname; Cloudflare injects `Cf-Access-Jwt-Assertion` and `CF-Access-Authenticated-User-Email`. A cross-site form `POST` to that hostname is then an authenticated state change.
+
+`/api` therefore uses `tower_http::csrf::CsrfLayer` (the Go 1.25 scheme: `Sec-Fetch-Site`, an `Origin` allow-list from CORS `allowed_origins`, and `Origin`/`Host` fallback). There are no per-request CSRF tokens.
+
+**Still allowed:**
+
+- Same-origin UI (`fetch('/api/...')` from the static files Hone serves)
+- Vite dev proxy (`Sec-Fetch-Site: same-origin` from the browser; `changeOrigin` rewrites `Host`)
+- Bearer, curl, and other non-browser clients that send neither `Origin` nor `Sec-Fetch-Site`
+
+**Rejected (403):** state-changing requests (`POST` / `PUT` / `PATCH` / `DELETE`) with `Sec-Fetch-Site: cross-site`, or an `Origin` that matches neither `Host` nor the CORS allow-list.
+
+MCP is not wrapped. Its tools are read-only and clients are non-browser (Bearer or trusted-net). Wrap MCP if it ever grows write tools or cookie login.
+
+Add cookie-aware CSRF tokens (or keep this layer and audit cookie `SameSite`) if Hone later adds first-party cookie sessions. Reverse proxies must forward `Origin` and `Host` unchanged; if they rewrite `Host` to an internal name, modern browsers still pass via `Sec-Fetch-Site: same-origin`.
+
 ### Security Requirements
 
 **Important**: Enable JWT validation for production deployments behind Cloudflare Access.
