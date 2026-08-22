@@ -62,9 +62,10 @@ The MCP server (`--mcp-port`) uses this same authentication. `--no-auth` leaves 
 
 Docker published ports must bind to `0.0.0.0` (or `::`) inside the container, so they cannot use `--no-auth`. Compose already omits that flag. For local Docker access without Cloudflare, set `HONE_TRUSTED_NETWORKS` or `HONE_API_KEYS` in `.env` (see Trusted Networks Setup and API Key Setup below).
 
-> **Keep `--host 0.0.0.0` when editing `command:`** — without it the server only
-> listens inside the container and the published port won't work. The startup log
-> confirms the bind address on the `Listening:` line.
+> **Keep `--host 0.0.0.0` and `--static-dir /app/ui/dist` when editing `command:`**
+> — without `--host` the published port won't work; without `--static-dir` the
+> UI 404s after bind works. The startup log confirms the bind address on the
+> `Listening:` line and the UI path on `Static files:`.
 
 ### Security Requirements
 
@@ -313,10 +314,17 @@ missing from your `command:` line — loopback inside the container is unreachab
 through Docker's port mapping. Restore the full command:
 
 ```yaml
-command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db", "--static-dir", "/app/ui/dist"]
 ```
 
 Newer images also print a startup warning when this misconfiguration is detected.
+
+### UI 404 after the server binds
+
+API routes work but `/` (and other UI paths) return 404. Compose `command:`
+replaces the image CMD, which includes `--static-dir /app/ui/dist`. Restore that
+flag on the command shown above. Startup logs should include
+`Static files: /app/ui/dist`.
 
 ## Mac Training Setup
 
