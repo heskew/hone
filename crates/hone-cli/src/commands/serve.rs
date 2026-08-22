@@ -1,6 +1,6 @@
 //! Server command implementation
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
@@ -18,6 +18,12 @@ pub async fn cmd_serve(
 ) -> Result<()> {
     ensure_no_auth_allowed(host, no_auth)?;
 
+    let static_dir = resolve_static_dir(
+        static_dir,
+        running_in_container(),
+        Path::new(CONTAINER_UI_DIST),
+    );
+
     println!("🚀 Starting Hone web server...");
     println!("   Database: {}", db_path.display());
     println!("   Listening: http://{}:{}", host, port);
@@ -31,7 +37,7 @@ pub async fn cmd_serve(
             "      Use --host 0.0.0.0 to accept connections through the container port mapping."
         );
     }
-    if let Some(dir) = static_dir {
+    if let Some(dir) = &static_dir {
         println!("   Static files: {}", dir.display());
     }
     if let Some(mcp) = mcp_port {
@@ -136,8 +142,9 @@ pub async fn cmd_serve(
         });
     }
 
-    let static_dir_str =
-        static_dir.map(|p| p.to_str().expect("static_dir path must be valid UTF-8"));
+    let static_dir_str = static_dir
+        .as_deref()
+        .map(|p| p.to_str().expect("static_dir path must be valid UTF-8"));
     hone_server::serve_with_config(db, host, port, static_dir_str, config).await?;
 
     Ok(())
@@ -173,6 +180,27 @@ fn running_in_container() -> bool {
     // HONE_IN_CONTAINER is baked into the published images; /.dockerenv covers
     // plain Docker for images that predate the env var
     std::env::var_os("HONE_IN_CONTAINER").is_some() || Path::new("/.dockerenv").exists()
+}
+
+/// UI path baked into Dockerfile / Dockerfile.release.
+const CONTAINER_UI_DIST: &str = "/app/ui/dist";
+
+/// Use an explicit `--static-dir` when given. In the published image, compose
+/// `command:` replaces CMD and can drop that flag (issue #63); if the image
+/// UI directory is present, serve it anyway. Unset outside the image layout
+/// stays unset so local CLI use is unchanged.
+fn resolve_static_dir(
+    explicit: Option<&Path>,
+    in_container: bool,
+    image_ui: &Path,
+) -> Option<PathBuf> {
+    if let Some(dir) = explicit {
+        return Some(dir.to_path_buf());
+    }
+    if in_container && image_ui.is_dir() {
+        return Some(image_ui.to_path_buf());
+    }
+    None
 }
 
 #[cfg(test)]
@@ -227,5 +255,100 @@ mod tests {
             ensure_no_auth_allowed(host, false)
                 .unwrap_or_else(|e| panic!("auth-enabled serve should accept host {host}: {e}"));
         }
+    }
+
+    #[test]
+    fn resolve_static_dir_keeps_explicit() {
+        let path = Path::new("/custom/ui");
+        assert_eq!(
+            resolve_static_dir(Some(path), true, Path::new(CONTAINER_UI_DIST)).as_deref(),
+            Some(path)
+        );
+    }
+
+    #[test]
+    fn resolve_static_dir_unset_outside_container_is_none() {
+        assert_eq!(
+            resolve_static_dir(None, false, Path::new(CONTAINER_UI_DIST)),
+            None
+        );
+    }
+
+    #[test]
+    fn resolve_static_dir_falls_back_when_image_path_exists() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(
+            resolve_static_dir(None, true, tmp.path()).as_deref(),
+            Some(tmp.path())
+        );
+    }
+
+    #[test]
+    fn resolve_static_dir_no_fallback_if_image_path_missing() {
+        assert_eq!(
+            resolve_static_dir(None, true, Path::new("/definitely/not/a/hone/ui/dist")),
+            None
+        );
+    }
+
+    #[test]
+    fn compose_serve_commands_include_static_dir() {
+        let contents = read_repo_file("deploy/docker-compose.yml");
+        let commands: Vec<&str> = contents
+            .lines()
+            .filter(|line| line.contains("command:") && line.contains("serve"))
+            .collect();
+        assert!(
+            !commands.is_empty(),
+            "expected at least one serve command in deploy/docker-compose.yml"
+        );
+        for line in commands {
+            assert!(
+                line.contains("--static-dir"),
+                "compose command must keep --static-dir so the image UI is served: {line}"
+            );
+            assert!(
+                line.contains("/app/ui/dist"),
+                "compose --static-dir should point at the image UI path: {line}"
+            );
+            assert!(
+                line.contains("--host") && line.contains("0.0.0.0"),
+                "compose command must keep --host 0.0.0.0: {line}"
+            );
+            assert!(
+                !line.contains("--no-auth"),
+                "compose must not pass --no-auth on the published 0.0.0.0 bind: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn deployment_docs_restore_examples_include_static_dir() {
+        let contents = read_repo_file("docs/deployment.md");
+        let commands: Vec<&str> = contents
+            .lines()
+            .filter(|line| line.contains("command:") && line.contains("serve"))
+            .collect();
+        assert!(
+            !commands.is_empty(),
+            "expected a restore command example in docs/deployment.md"
+        );
+        for line in commands {
+            assert!(
+                line.contains("--static-dir") && line.contains("/app/ui/dist"),
+                "deployment.md serve examples must include --static-dir /app/ui/dist: {line}"
+            );
+            assert!(
+                !line.contains("--no-auth"),
+                "deployment.md must not recommend --no-auth on a published bind: {line}"
+            );
+        }
+    }
+
+    fn read_repo_file(relative: &str) -> String {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(relative);
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
     }
 }

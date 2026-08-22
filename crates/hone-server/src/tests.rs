@@ -27,6 +27,53 @@ fn setup_test_app() -> Router {
     create_router(db, None, config)
 }
 
+#[tokio::test]
+async fn static_dir_serves_index_html() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join("index.html"),
+        "<!DOCTYPE html><html><body>Hone UI</body></html>",
+    )
+    .unwrap();
+
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let config = ServerConfig {
+        require_auth: false,
+        allowed_origins: vec![],
+        ..Default::default()
+    };
+    let app = create_router(db, Some(tmp.path().to_str().unwrap()), config);
+
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        text.contains("Hone UI"),
+        "serve with --static-dir must return index.html: {text}"
+    );
+}
+
+#[tokio::test]
+async fn missing_static_dir_returns_404_for_ui() {
+    let app = setup_test_app();
+    let response = app
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NOT_FOUND,
+        "without --static-dir the UI path 404s after bind works"
+    );
+}
+
 async fn get_body_json(response: axum::response::Response) -> serde_json::Value {
     let body = response.into_body();
     let bytes = body.collect().await.unwrap().to_bytes();

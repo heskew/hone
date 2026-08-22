@@ -14,7 +14,7 @@ services:
       - hone-data:/data
     ports:
       - "3000:3000"
-    command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+    command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db", "--static-dir", "/app/ui/dist"]
 
 volumes:
   hone-data:
@@ -40,7 +40,7 @@ volumes:
 #       - "3000:3000"
 #     networks:
 #       - hone-internal
-#     command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db"]
+#     command: ["serve", "--host", "0.0.0.0", "--db", "/data/hone.db", "--static-dir", "/app/ui/dist"]
 #
 #   ollama:
 #     image: ollama/ollama

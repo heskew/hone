@@ -86,6 +86,9 @@ pub enum Commands {
         no_auth: bool,
 
         /// Directory containing static files to serve (e.g., ui/dist)
+        ///
+        /// Published Docker images ship the UI at /app/ui/dist. Pass that path
+        /// when overriding the image command (compose `command:`) or the UI 404s.
         #[arg(long)]
         static_dir: Option<PathBuf>,
 
