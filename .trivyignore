@@ -9,6 +9,6 @@
 #   # Added: YYYY-MM-DD | Status: affected/will_not_fix
 #   CVE-XXXX-XXXXX
 
-# OpenSSL QUIC server unbounded pending connections - Hone is not a QUIC listener; no fix in Debian 12
+# OpenSSL QUIC server unbounded pending connections - Hone is not a QUIC listener; no fix in Debian 13 (trixie postponed)
 # Added: 2026-08-22 | Status: affected
 CVE-2026-14456
