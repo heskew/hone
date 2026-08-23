@@ -30,7 +30,8 @@ pub struct McpOAuthConfig {
     pub authorization_servers: Vec<String>,
     /// HS256 secret for locally minted MCP-audience JWTs (`HONE_MCP_JWT_SECRET`).
     pub jwt_secret: Option<String>,
-    /// Expected `iss` when validating AS-issued JWTs.
+    /// Expected `iss` when validating AS-issued JWKS tokens only.
+    /// Local HS256 tokens from `hone mcp-token` omit `iss`.
     pub issuer: Option<String>,
     /// JWKS URL for RS256 tokens from an external AS (`HONE_MCP_JWKS_URL`).
     pub jwks_url: Option<String>,
@@ -194,13 +195,12 @@ pub fn validate_mcp_hs256(token: &str, config: &McpOAuthConfig) -> Result<(), St
         .filter(|s| !s.is_empty())
         .ok_or("MCP resource not configured")?;
 
+    // Local HS256 tokens (`hone mcp-token`) omit `iss`. HONE_MCP_ISSUER is
+    // for external JWKS tokens only — applying it here rejects every mint.
     let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
     validation.set_required_spec_claims(&["exp", "aud"]);
     validation.set_audience(&[resource]);
     validation.validate_exp = true;
-    if let Some(iss) = config.issuer.as_deref().filter(|s| !s.is_empty()) {
-        validation.set_issuer(&[iss]);
-    }
 
     let data = jsonwebtoken::decode::<McpAccessClaims>(
         token,
@@ -372,6 +372,21 @@ mod tests {
             ..Default::default()
         };
         validate_mcp_hs256(&token, &config).unwrap();
+    }
+
+    #[test]
+    fn minted_token_still_validates_when_issuer_is_set() {
+        let resource = "http://127.0.0.1:3001/mcp";
+        let secret = "test-mcp-jwt-secret";
+        let token = mint_mcp_access_token(secret, resource, 60).unwrap();
+        let config = McpOAuthConfig {
+            resource: Some(resource.to_string()),
+            jwt_secret: Some(secret.to_string()),
+            issuer: Some("https://auth.example".to_string()),
+            ..Default::default()
+        };
+        validate_mcp_hs256(&token, &config)
+            .expect("HONE_MCP_ISSUER must not reject locally minted HS256 tokens");
     }
 
     #[test]
