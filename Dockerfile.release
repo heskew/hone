@@ -1,15 +1,15 @@
 # Release Dockerfile - packages pre-built binaries
 # Used by CI/CD after cross-compilation
 #
-# Base image: Google Distroless (cc-debian12)
+# Base image: Google Distroless (cc-debian13)
 # Distroless provides a minimal, secure execution environment with no shell, 
 # package manager, or standard utilities. It runs as nonroot by default.
 #
 # Alternatives:
-#   FROM debian:bookworm-slim    (Standard Debian, includes shell for debugging)
+#   FROM debian:trixie-slim      (Standard Debian, includes shell for debugging)
 #   FROM dhi.io/debian-base      (Hardened Debian, includes shell)
 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian13
 WORKDIR /app
 
 # Lets the server warn when asked to bind loopback, which is unreachable

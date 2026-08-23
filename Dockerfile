@@ -1,5 +1,5 @@
 # Stage 1: Build Rust backend
-FROM rust:1.92-bookworm AS backend-builder
+FROM rust:1.92-trixie AS backend-builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y pkg-config libssl-dev
 COPY Cargo.toml Cargo.lock ./
@@ -7,7 +7,7 @@ COPY crates/ crates/
 RUN cargo build --release --bin hone
 
 # Stage 2: Build frontend
-FROM node:24-bookworm AS frontend-builder
+FROM node:24-trixie AS frontend-builder
 WORKDIR /app
 COPY ui/package*.json ui/
 RUN cd ui && npm ci
@@ -15,10 +15,10 @@ COPY ui/ ui/
 RUN cd ui && npm run build
 
 # Stage 3: Runtime stage
-# Using Google Distroless (cc-debian12) for minimal attack surface.
+# Using Google Distroless (cc-debian13) for minimal attack surface.
 # Distroless is the gold standard for security, providing a minimal attack surface 
 # with no shell, package manager, or unnecessary utilities. 
-FROM gcr.io/distroless/cc-debian12
+FROM gcr.io/distroless/cc-debian13
 WORKDIR /app
 
 # Lets the server warn when asked to bind loopback, which is unreachable
