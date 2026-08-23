@@ -7,7 +7,10 @@
 //! - Restrictive CORS policy
 //! - CSRF protection on `/api` (`CsrfLayer`: Sec-Fetch-Site, Origin, Origin/Host)
 //! - Input validation (pagination limits, file size limits)
-//! - Full audit logging for all API access (reads and writes)
+//! - Audit logging: auth allow/deny (method + path, no bodies) and
+//!   handler-level semantic events on most `/api` routes. MCP tool calls
+//!   are not written to `audit_log`. Request bodies, prompts, and
+//!   transaction text are not stored.
 //! - Sanitized error responses
 
 use std::sync::Arc;
@@ -130,6 +133,34 @@ pub struct AppState {
     pub explore_sessions: handlers::ExploreSessionManager,
 }
 
+/// Config plus database for [`auth_middleware`] (auth outcomes go to `audit_log`).
+#[derive(Clone)]
+pub(crate) struct AuthLayerState {
+    pub config: ServerConfig,
+    pub db: Database,
+}
+
+/// Persist an auth allow/deny. Method + path only — no query string, headers, or bodies.
+fn log_auth_outcome(
+    db: &Database,
+    user_email: &str,
+    action: &str,
+    method: &Method,
+    path: &str,
+    via: Option<&str>,
+) {
+    if !(path.starts_with("/api") || is_mcp_path(path)) {
+        return;
+    }
+    let details = match via {
+        Some(via) => format!("{method} {path} {via}"),
+        None => format!("{method} {path}"),
+    };
+    if let Err(e) = db.log_audit(user_email, action, Some("http"), None, Some(&details)) {
+        warn!(error = %e, path, action, "Failed to write auth audit row");
+    }
+}
+
 /// Authentication middleware - validates Cloudflare Access JWT, headers, API keys, or trusted networks
 ///
 /// # Security Notes
@@ -156,7 +187,7 @@ pub struct AppState {
 /// **MCP JWTs**: HS256 (`HONE_MCP_JWT_SECRET`) or RS256 (`HONE_MCP_JWKS_URL`)
 /// tokens must include the MCP resource in `aud` (RFC 8707). Rejected on `/api`.
 pub(crate) async fn auth_middleware(
-    State(config): State<Arc<ServerConfig>>,
+    State(auth): State<Arc<AuthLayerState>>,
     request: Request,
     next: Next,
 ) -> Response {
@@ -167,9 +198,13 @@ pub(crate) async fn auth_middleware(
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .copied();
-    if !config.require_auth {
+    if !auth.config.require_auth {
         return next.run(request).await;
     }
+
+    let method = request.method().clone();
+    let path = request.uri().path().to_string();
+    let config = &auth.config;
 
     // Check if request is from a trusted network
     if !config.trusted_networks.is_empty() {
@@ -193,7 +228,15 @@ pub(crate) async fn auth_middleware(
 
         if let Some(ip) = client_ip {
             if is_ip_trusted(&ip, &config.trusted_networks) {
-                info!(ip = %ip, path = %request.uri().path(), "Authenticated via trusted network");
+                info!(ip = %ip, path = %path, "Authenticated via trusted network");
+                log_auth_outcome(
+                    &auth.db,
+                    "local-dev",
+                    "auth_allow",
+                    &method,
+                    &path,
+                    Some("trusted_network"),
+                );
                 return next.run(request).await;
             }
         }
@@ -208,11 +251,19 @@ pub(crate) async fn auth_middleware(
         {
             match validate_cf_jwt(jwt, &config.cf_jwt).await {
                 Ok(email) => {
-                    info!(user = %email, path = %request.uri().path(), "Authenticated via Cloudflare JWT");
+                    info!(user = %email, path = %path, "Authenticated via Cloudflare JWT");
+                    log_auth_outcome(
+                        &auth.db,
+                        &email,
+                        "auth_allow",
+                        &method,
+                        &path,
+                        Some("cf_jwt"),
+                    );
                     return next.run(request).await;
                 }
                 Err(e) => {
-                    warn!(error = %e, path = %request.uri().path(), "Invalid Cloudflare JWT");
+                    warn!(error = %e, path = %path, "Invalid Cloudflare JWT");
                     // Fall through to try other auth methods
                 }
             }
@@ -235,19 +286,26 @@ pub(crate) async fn auth_middleware(
         if config.cf_jwt.team_name.is_some() {
             warn!(
                 user = %email,
-                path = %request.uri().path(),
+                path = %path,
                 "Authenticated via CF header (JWT validation configured but no valid JWT)"
             );
         } else {
-            info!(user = %email, path = %request.uri().path(), "Authenticated via Cloudflare Access header");
+            info!(user = %email, path = %path, "Authenticated via Cloudflare Access header");
         }
+        log_auth_outcome(
+            &auth.db,
+            email,
+            "auth_allow",
+            &method,
+            &path,
+            Some("cf_header"),
+        );
         return next.run(request).await;
     }
 
     // Bearer tokens are scoped: MCP-only keys and MCP-audience JWTs cannot
     // open /api write routes. API keys still work on /mcp so existing
     // HONE_API_KEYS setups keep working.
-    let path = request.uri().path();
     let bearer = request
         .headers()
         .get(AUTHORIZATION_HEADER)
@@ -255,14 +313,21 @@ pub(crate) async fn auth_middleware(
         .and_then(|auth| auth.strip_prefix("Bearer "));
 
     if let Some(token) = bearer {
-        if let Some(user) = accept_bearer(path, token, &config) {
+        if let Some(user) = accept_bearer(&path, token, config) {
             info!(user, path = %path, "Authenticated via Bearer token");
+            let via = match user {
+                "api-key" => "api_key",
+                "mcp-key" => "mcp_key",
+                "mcp-token" => "mcp_jwt",
+                other => other,
+            };
+            log_auth_outcome(&auth.db, user, "auth_allow", &method, &path, Some(via));
             return next.run(request).await;
         }
 
         // RS256 MCP tokens from an external AS (JWKS). HS256 is handled in
         // accept_bearer so tests stay sync.
-        if is_mcp_path(path)
+        if is_mcp_path(&path)
             && mcp::oauth::looks_like_jwt(token)
             && config.mcp_oauth.jwks_url.is_some()
         {
@@ -273,6 +338,14 @@ pub(crate) async fn auth_middleware(
                             .is_ok()
                         {
                             info!(user = "mcp-token", path = %path, "Authenticated via MCP JWT");
+                            log_auth_outcome(
+                                &auth.db,
+                                "mcp-token",
+                                "auth_allow",
+                                &method,
+                                &path,
+                                Some("mcp_jwt"),
+                            );
                             return next.run(request).await;
                         }
                     }
@@ -284,8 +357,9 @@ pub(crate) async fn auth_middleware(
         }
     }
 
-    warn!(path = %request.uri().path(), "Unauthorized request - no valid auth");
-    unauthorized_mcp_or_api(path, &config)
+    warn!(path = %path, "Unauthorized request - no valid auth");
+    log_auth_outcome(&auth.db, "anonymous", "auth_deny", &method, &path, None);
+    unauthorized_mcp_or_api(&path, config)
 }
 
 fn unauthorized_mcp_or_api(path: &str, config: &ServerConfig) -> Response {
@@ -625,6 +699,11 @@ pub fn create_router_with_options(
 
     // Default receipts directory relative to working directory
     let receipts_dir = std::path::PathBuf::from("receipts");
+
+    let auth_state = Arc::new(AuthLayerState {
+        config: config.clone(),
+        db: db.clone(),
+    });
 
     let state = Arc::new(AppState {
         db,
@@ -1028,10 +1107,7 @@ pub fn create_router_with_options(
 
     let mut app = Router::new()
         .nest("/api", api_routes)
-        .layer(middleware::from_fn_with_state(
-            Arc::new(config),
-            auth_middleware,
-        ))
+        .layer(middleware::from_fn_with_state(auth_state, auth_middleware))
         .with_state(state)
         .layer(TraceLayer::new_for_http())
         .layer(cors)

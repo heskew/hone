@@ -48,7 +48,7 @@ See `README.md` for architecture diagram. Stack: React + Vite frontend, Axum RES
 4. **Deduplication** - SHA256 hash of (date, description, amount) prevents double-imports
 5. **Secure by default** - Cloudflare Access auth required; `--no-auth` only on loopback
 6. **CSRF on `/api`** - `tower_http::csrf::CsrfLayer` (no tokens). Trusted-net and CF-header sessions are browser-invocable; Bearer/MCP clients that omit `Origin` / `Sec-Fetch-Site` still pass
-7. **Audit logging** - All API access logged
+7. **Audit logging** - Auth allow/deny (method+path) and most `/api` handler actions; not MCP tool calls; no prompt/txn/PII
 8. **Full processing by default** - Import runs tagging + detection automatically
 9. **Raw data preservation** - Original CSV data stored as JSON for reprocessing (Amex extended Account # / address / card member omitted)
 
@@ -71,7 +71,7 @@ Key tables (see `docs/SPLITS_DESIGN.md` for entity/split schema):
 - `tags` - Hierarchical category tags (17 root tags seeded)
 - `transaction_tags` - Transaction-to-tag mapping with source tracking
 - `tag_rules` - User-defined patterns for auto-tagging
-- `audit_log` - API access history
+- `audit_log` - Auth allow/deny and handler-level API actions (no request bodies or prompt/txn text)
 - `entities` - People, pets, vehicles, properties
 - `locations`, `trips`, `mileage_logs` - Location and travel tracking
 - `receipts` - Receipt storage with status workflow

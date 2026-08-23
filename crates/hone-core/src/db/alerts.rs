@@ -406,7 +406,9 @@ impl Database {
         })
     }
 
-    /// Log an audit event
+    /// Log an audit event.
+    ///
+    /// `details` must not include request bodies, prompts, or transaction text.
     pub fn log_audit(
         &self,
         user_email: &str,

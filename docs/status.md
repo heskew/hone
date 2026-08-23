@@ -20,7 +20,7 @@ What's working in Hone today.
 
 - SQLite + SQLCipher encryption (required by default)
 - Axum REST API with Cloudflare Access auth
-- Full audit logging
+- Audit logging (auth allow/deny on `/api` and `/mcp`, plus most `/api` handler actions; no request bodies or prompt/txn text)
 - Docker multi-arch images (amd64, arm64)
 - Local encrypted backups with CLI management
 

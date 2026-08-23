@@ -15,7 +15,7 @@ Comprehensive list of implemented features.
 - All seven detection algorithms (zombie, price increase, duplicate, auto-cancellation, resume, spending anomaly, tip discrepancy)
 - Subscription lifecycle monitoring (auto-detect cancelled, alert on resume)
 - CLI with rich output (modular command structure in `commands/`)
-- REST API with authentication and audit logging
+- REST API with authentication and audit logging (auth allow/deny plus handler-level events on most `/api` routes; no request bodies or prompt/txn text)
 - 788 Rust tests
 
 ## Frontend
@@ -49,6 +49,20 @@ See `docs/deployment.md` for details:
 - Trusted proxies for extracting real client IP (`HONE_TRUSTED_PROXIES`)
 - MCP (`--mcp-port`) uses the same `auth_middleware` as `/api`; `--no-auth` leaves both open and is accepted only on a loopback bind
 - CSRF on `/api` via `tower-http` `CsrfLayer` (trusted-net and CF-header browser sessions; Bearer/MCP clients without `Origin` still work)
+
+## Audit Logging
+
+`audit_log` records two kinds of events:
+- Auth allow/deny from `auth_middleware` on `/api` and `/mcp` when `require_auth` is on: HTTP method, path, and how auth succeeded (`trusted_network`, `cf_jwt`, `cf_header`, `api_key`, `mcp_key`, `mcp_jwt`). No query strings, headers, tokens, or bodies.
+- Handler-level semantic events (action + entity type/id) on most `/api` routes, plus scheduled backup runs (as user `scheduler`)
+
+Left out on purpose:
+- Request bodies, explore query text, prompts, or transaction text
+- MCP tool invocations (the HTTP auth outcome is audited; tool calls are not)
+- Handler-level events for `GET /api/me`, `/api/training/*`, `GET /api/explore/session/{id}`, and `GET /api/explore/models`
+- Auth outcomes when `--no-auth` / `require_auth` is off (handlers that call `log_audit` still write)
+
+Auth allow/deny also go to tracing.
 
 ## Tags System
 

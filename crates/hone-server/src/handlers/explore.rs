@@ -381,13 +381,13 @@ pub async fn query_explore(
         .update_session(&session_id, orchestrator_result.messages)
         .await;
 
-    // Audit log
+    // Audit log — session id only; never persist the query text (#67/#68)
     state.db.log_audit(
         &user_email,
         "explore_query",
         Some("explore"),
         None,
-        Some(&payload.query),
+        Some(&session_id),
     )?;
 
     debug!(
