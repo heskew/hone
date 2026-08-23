@@ -342,7 +342,7 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(type);
             CREATE INDEX IF NOT EXISTS idx_alerts_dismissed ON alerts(dismissed);
 
-            -- Audit log (tracks all API access for security)
+            -- Audit log (auth outcomes + handler-level API actions; no request bodies)
             CREATE TABLE IF NOT EXISTS audit_log (
                 id INTEGER PRIMARY KEY,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,

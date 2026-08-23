@@ -44,7 +44,7 @@ use tracing::{info, warn};
 use hone_core::db::Database;
 use hone_core::Error as CoreError;
 
-use crate::{auth_middleware, ServerConfig};
+use crate::{auth_middleware, AuthLayerState, ServerConfig};
 
 pub use oauth::{mint_mcp_access_token, McpOAuthConfig, MCP_READ_SCOPE};
 pub use tools::*;
@@ -211,6 +211,11 @@ pub(crate) fn create_mcp_router(
         .allowed_hosts
         .extend(extra_allowed_hosts.iter().cloned());
 
+    let auth_state = Arc::new(AuthLayerState {
+        config: config.clone(),
+        db: db.clone(),
+    });
+
     let service = StreamableHttpService::new(
         move || Ok(HoneMcpServer::new(db.clone())),
         LocalSessionManager::default().into(),
@@ -244,13 +249,9 @@ pub(crate) fn create_mcp_router(
             }),
         );
 
-    let protected =
-        axum::Router::new()
-            .nest_service("/mcp", service)
-            .layer(middleware::from_fn_with_state(
-                Arc::new(config),
-                auth_middleware,
-            ));
+    let protected = axum::Router::new()
+        .nest_service("/mcp", service)
+        .layer(middleware::from_fn_with_state(auth_state, auth_middleware));
 
     well_known.merge(protected)
 }
@@ -334,11 +335,19 @@ mod tests {
             require_auth: true,
             ..Default::default()
         };
-        let app = create_mcp_router(db, &[], config);
+        let app = create_mcp_router(db.clone(), &[], config);
 
         let response = app.oneshot(mcp_json_request()).await.unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+        let entries = db.list_audit_log(20).unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|e| { e.action == "auth_deny" && e.details.as_deref() == Some("POST /mcp") }),
+            "MCP auth deny must write method+path, got {entries:?}"
+        );
     }
 
     #[tokio::test]

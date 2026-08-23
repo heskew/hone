@@ -2545,6 +2545,112 @@ async fn test_audit_log() {
 }
 
 #[tokio::test]
+async fn test_mutating_api_writes_audit_row() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let config = ServerConfig {
+        require_auth: false,
+        allowed_origins: vec![],
+        ..Default::default()
+    };
+    let app = create_router(db.clone(), None, config);
+
+    let body = serde_json::json!({
+        "name": "AuditTag",
+        "color": "#00aa00"
+    });
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/api/tags")
+                .header("content-type", "application/json")
+                .body(Body::from(serde_json::to_string(&body).unwrap()))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|e| e.action == "create" && e.entity_type.as_deref() == Some("tag")),
+        "POST /api/tags must write a handler audit row, got {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_auth_deny_writes_audit_row() {
+    let db = Database::in_memory().unwrap();
+    let config = ServerConfig {
+        require_auth: true,
+        allowed_origins: vec![],
+        ..Default::default()
+    };
+    let app = create_router(db.clone(), None, config);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tags")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries.iter().any(|e| {
+            e.action == "auth_deny"
+                && e.user_email == "anonymous"
+                && e.details.as_deref() == Some("GET /api/tags")
+        }),
+        "auth deny must write method+path only, got {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_auth_allow_writes_audit_row() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let config = ServerConfig {
+        require_auth: true,
+        allowed_origins: vec![],
+        ..Default::default()
+    };
+    let app = create_router(db.clone(), None, config);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tags")
+                .header("cf-access-authenticated-user-email", "test@example.com")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries.iter().any(|e| {
+            e.action == "auth_allow"
+                && e.user_email == "test@example.com"
+                && e.details.as_deref() == Some("GET /api/tags cf_header")
+        }),
+        "auth allow must write method+path+via, got {entries:?}"
+    );
+}
+
+#[tokio::test]
 async fn test_dismiss_alert() {
     let db = Database::in_memory().unwrap();
     db.seed_root_tags().unwrap();
