@@ -8,9 +8,27 @@
 # Alternatives:
 #   FROM debian:trixie-slim      (Standard Debian, includes shell for debugging)
 #   FROM dhi.io/debian-base      (Hardened Debian, includes shell)
+#
+# Distroless cc-debian13 still ships libssl3t64 3.5.6-1~deb13u2 (snapshot
+# 2026-08-18). Debian 13 security has 3.5.7-1~deb13u2 (CVE-2026-14456).
+# Overlay that package and its dpkg status.d metadata until distroless
+# rebuilds. Do not ignore the CVE.
+
+FROM debian:trixie-slim AS libssl
+RUN apt-get update \
+    && apt-get download libssl3t64 \
+    && VER="$(dpkg-deb -f libssl3t64_*.deb Version)" \
+    && echo "libssl3t64 ${VER}" \
+    && dpkg --compare-versions "$VER" ge "3.5.7-1~deb13u2" \
+    && mkdir -p /ssl-overlay/var/lib/dpkg/status.d \
+    && dpkg-deb -x libssl3t64_*.deb /ssl-overlay \
+    && dpkg-deb -e libssl3t64_*.deb /tmp/libssl-ctrl \
+    && cp /tmp/libssl-ctrl/control /ssl-overlay/var/lib/dpkg/status.d/libssl3t64 \
+    && cp /tmp/libssl-ctrl/md5sums /ssl-overlay/var/lib/dpkg/status.d/libssl3t64.md5sums
 
 FROM gcr.io/distroless/cc-debian13
 WORKDIR /app
+COPY --from=libssl /ssl-overlay/ /
 
 # Lets the server warn when asked to bind loopback, which is unreachable
 # through the container port mapping
