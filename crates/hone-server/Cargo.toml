@@ -24,7 +24,7 @@ serde_json.workspace = true      # JSON API bodies
 # Cryptography
 sha2.workspace = true            # Content hashing
 hex.workspace = true             # Digest hex encoding
-base64 = "0.22"                  # Receipt image encoding
+base64 = "0.23"                  # Receipt image encoding
 subtle = "2.5"                   # Constant-time comparison for API keys
 # rust_crypto: required since jsonwebtoken 10 (no default backend).
 # Pure-Rust, matches reqwest's rustls choice for portable/multi-arch builds.

@@ -35,7 +35,7 @@ reqwest.workspace = true         # Ollama API calls
 # Cryptography
 sha2.workspace = true            # Transaction/receipt hashing
 hex.workspace = true             # Hash display
-base64 = "0.22"                  # Receipt image encoding
+base64 = "0.23"                  # Receipt image encoding
 
 # Error handling
 thiserror.workspace = true       # Library error types
