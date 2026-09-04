@@ -65,7 +65,7 @@ r2d2_sqlite = "0.25"
 
 # argon2: Password hashing using Argon2id. Used for database key derivation
 # from the HONE_DB_KEY passphrase.
-argon2 = { version = "0.5", features = ["password-hash"] }
+argon2 = { version = "0.6", features = ["password-hash"] }
 
 # -----------------------------------------------------------------------------
 # Serialization
