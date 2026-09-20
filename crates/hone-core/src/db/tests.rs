@@ -918,6 +918,19 @@ mod tests {
     }
 
     #[test]
+    fn test_key_derivation_is_stable_across_argon2_versions() {
+        // Pinned against argon2 0.5.3 (PasswordHasher + SaltString::encode_b64).
+        // A mismatch means existing SQLCipher databases would be unreadable.
+        const PASSPHRASE: &str = "hone-test-passphrase-v1";
+        const EXPECTED_HEX: &str =
+            "aabcaa6ab871a66d5eb0600dc31fa11176d5fbe1c78572e89da28b600dfb6302";
+
+        let key = derive_key(PASSPHRASE).expect("key derivation should succeed");
+        assert_eq!(key, EXPECTED_HEX);
+        assert_eq!(key.len(), 64);
+    }
+
+    #[test]
     fn test_encryption_required_by_default() {
         use std::env;
         use std::fs;
