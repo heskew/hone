@@ -47,25 +47,19 @@ pub const DB_KEY_ENV: &str = "HONE_DB_KEY";
 /// Uses a fixed application salt so the same passphrase always produces the same key,
 /// regardless of database path. This allows moving/renaming/restoring the database freely.
 fn derive_key(passphrase: &str) -> Result<String> {
-    use argon2::{password_hash::SaltString, Argon2, PasswordHasher};
+    use argon2::Argon2;
 
     // Fixed application salt - changing this would invalidate all existing encrypted databases
     const APP_SALT: &[u8; 16] = b"hone-salt-v1-fix";
 
-    let salt = SaltString::encode_b64(APP_SALT)
-        .map_err(|e| Error::Encryption(format!("Failed to create salt: {}", e)))?;
-
-    // Derive key using Argon2id
-    let argon2 = Argon2::default();
-    let hash = argon2
-        .hash_password(passphrase.as_bytes(), &salt)
+    // Argon2id defaults (m=19456, t=2, p=1) and 32-byte output. Must match the
+    // argon2 0.5 PasswordHasher path, which B64-encoded this salt then decoded
+    // it back to these same bytes before hash_password_into.
+    let mut key = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(passphrase.as_bytes(), APP_SALT, &mut key)
         .map_err(|e| Error::Encryption(format!("Failed to derive key: {}", e)))?;
-
-    // Extract the hash portion for use as SQLCipher key (hex encoded)
-    let hash_str = hash
-        .hash
-        .ok_or_else(|| Error::Encryption("No hash output".to_string()))?;
-    Ok(hex::encode(hash_str.as_bytes()))
+    Ok(hex::encode(key))
 }
 
 /// Parse a SQLite datetime string into a DateTime<Utc>
