@@ -86,7 +86,7 @@ impl OpenAICompatibleBackend {
     pub fn new(base_url: &str, model: &str) -> Self {
         let router = ModelRouter::new().unwrap_or_default();
         Self {
-            http_client: Client::new(),
+            http_client: super::host::ai_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             api_key: None,
@@ -99,7 +99,7 @@ impl OpenAICompatibleBackend {
     pub fn with_api_key(base_url: &str, model: &str, api_key: &str) -> Self {
         let router = ModelRouter::new().unwrap_or_default();
         Self {
-            http_client: Client::new(),
+            http_client: super::host::ai_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
             api_key: Some(api_key.to_string()),

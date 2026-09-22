@@ -81,7 +81,7 @@ impl OllamaBackend {
     pub fn new(base_url: &str, default_model: &str) -> Self {
         let router = ModelRouter::new().unwrap_or_default();
         Self {
-            http_client: Client::new(),
+            http_client: super::host::ai_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             router: Arc::new(RwLock::new(router)),
             default_model: default_model.to_string(),
@@ -105,7 +105,7 @@ impl OllamaBackend {
     /// Create with a custom router
     pub fn with_router(base_url: &str, default_model: &str, router: ModelRouter) -> Self {
         Self {
-            http_client: Client::new(),
+            http_client: super::host::ai_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             router: Arc::new(RwLock::new(router)),
             default_model: default_model.to_string(),
@@ -151,6 +151,19 @@ struct OllamaResponse {
     response: String,
 }
 
+/// A non-2xx from Ollama. `error_for_status` only fails on 4xx/5xx; a 3xx
+/// is returned as `Ok` because redirects are not followed.
+fn ollama_http_error(response: reqwest::Response) -> Error {
+    let status = response.status();
+    match response.error_for_status() {
+        Err(err) => Error::Http(err),
+        Ok(response) => Error::InvalidData(format!(
+            "Ollama returned HTTP {status} for {} and the redirect was not followed",
+            response.url()
+        )),
+    }
+}
+
 #[async_trait]
 impl AIBackend for OllamaBackend {
     async fn classify_merchant(&self, merchant: &str) -> Result<MerchantClassification> {
@@ -179,7 +192,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -241,7 +254,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -299,7 +312,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -344,7 +357,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -394,7 +407,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -432,7 +445,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -470,7 +483,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -536,7 +549,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -584,7 +597,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
@@ -671,7 +684,7 @@ impl AIBackend for OllamaBackend {
             .await?;
 
         if !response.status().is_success() {
-            return Err(Error::Http(response.error_for_status().unwrap_err()));
+            return Err(ollama_http_error(response));
         }
 
         let ollama_response: OllamaResponse = response.json().await?;
