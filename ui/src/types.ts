@@ -634,9 +634,11 @@ export type OllamaOperation = "classify_merchant" | "parse_receipt" | "suggest_e
 
 export interface ToolCallRecord {
   name: string;
-  input: Record<string, unknown>;
+  /** Present on the live explore response. Omitted from stored AI Metrics. */
+  input?: Record<string, unknown>;
   success: boolean;
-  output: string | null;
+  /** Present on the live explore response. Omitted from stored AI Metrics. */
+  output?: string | null;
 }
 
 export interface OllamaMetric {

@@ -703,12 +703,14 @@ export function OllamaPage() {
                                           )}
                                           <span className="font-mono font-medium">{tc.name}</span>
                                         </div>
-                                        <div className="mt-1 text-xs">
-                                          <span className="text-hone-500">Input:</span>{" "}
-                                          <span className="font-mono text-hone-600 dark:text-hone-400">
-                                            {JSON.stringify(tc.input)}
-                                          </span>
-                                        </div>
+                                        {tc.input != null && (
+                                          <div className="mt-1 text-xs">
+                                            <span className="text-hone-500">Input:</span>{" "}
+                                            <span className="font-mono text-hone-600 dark:text-hone-400">
+                                              {JSON.stringify(tc.input)}
+                                            </span>
+                                          </div>
+                                        )}
                                         {tc.output && (
                                           <div className="mt-1 text-xs">
                                             <span className="text-hone-500">Output:</span>{" "}

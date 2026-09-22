@@ -81,7 +81,7 @@ Key tables (see `docs/SPLITS_DESIGN.md` for entity/split schema):
 - `training_experiments` - Fine-tuning experiment tracking
 - `reprocess_runs`, `reprocess_snapshots` - Reprocess comparison
 - `insight_findings` - Proactive financial insights
-- `ollama_metrics` - AI call tracking (latency, success, tool calls metadata for explore queries; does not persist prompt/txn text)
+- `ollama_metrics` - AI call tracking (latency, success; explore metadata is tool name, success, and iteration count; does not persist prompt/txn text or explore tool payloads)
 
 ## Current State
 
@@ -110,7 +110,7 @@ See `docs/ollama.md` for setup and configuration.
 3. **Explore Mode** - conversational interface using agentic mode to answer financial questions
    - Multi-turn conversations with session persistence
    - Model selector to switch between available Ollama models at runtime
-   - Queries tracked in AI Metrics as `explore_query` operations with tool call history
+   - Queries tracked in AI Metrics as `explore_query` operations (tool name, success, iteration count — not query text, replies, or tool payloads)
 
 **Prompts**: Stored in `prompts/` with override support (`~/.local/share/hone/prompts/overrides/`)
 

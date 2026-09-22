@@ -15,8 +15,32 @@ impl Database {
     ///
     /// `input_text` is never persisted. Prompt payloads and merchant/txn
     /// descriptions must not land in `ollama_metrics` (privacy).
+    ///
+    /// `explore_query` rows store tool name, success, and iteration count.
+    /// The assistant reply (`result_text`) and tool input/output strings are
+    /// not persisted, even if a caller passes them.
     pub fn record_ollama_metric(&self, metric: &NewOllamaMetric) -> Result<i64> {
         let conn = self.conn()?;
+
+        let explore = metric.operation == OllamaOperation::ExploreQuery;
+        let sanitized_metadata = if explore {
+            metric
+                .metadata
+                .as_deref()
+                .and_then(sanitize_explore_metadata)
+        } else {
+            None
+        };
+        let result_text = if explore {
+            None
+        } else {
+            metric.result_text.as_deref()
+        };
+        let metadata = if explore {
+            sanitized_metadata.as_deref()
+        } else {
+            metric.metadata.as_deref()
+        };
 
         conn.execute(
             r#"
@@ -33,8 +57,8 @@ impl Database {
                 metric.error_message,
                 metric.confidence,
                 metric.transaction_id,
-                metric.result_text,
-                metric.metadata,
+                result_text,
+                metadata,
             ],
         )?;
 
@@ -520,6 +544,37 @@ impl Database {
     }
 }
 
+/// Keep tool name, success, and iteration count. Drop tool input/output
+/// and any other payload so ledger text cannot land in `metadata`.
+fn sanitize_explore_metadata(raw: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(raw).ok()?;
+    let mut out = serde_json::Map::new();
+    if let Some(iterations) = value.get("iterations").filter(|v| v.is_number()) {
+        out.insert("iterations".to_string(), iterations.clone());
+    }
+    let calls = value
+        .get("tool_calls")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|call| {
+                    let name = call.get("name")?.as_str()?;
+                    let success = call
+                        .get("success")
+                        .and_then(|s| s.as_bool())
+                        .unwrap_or(false);
+                    Some(serde_json::json!({
+                        "name": name,
+                        "success": success,
+                    }))
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    out.insert("tool_calls".to_string(), serde_json::Value::Array(calls));
+    serde_json::to_string(&serde_json::Value::Object(out)).ok()
+}
+
 /// Helper: compute percentile from sorted array
 fn percentile(sorted: &[i64], p: usize) -> i64 {
     if sorted.is_empty() {
@@ -615,6 +670,67 @@ mod tests {
     }
 
     #[test]
+    fn test_explore_query_metric_omits_tool_payloads() {
+        let db = Database::in_memory().unwrap();
+        let raw = "COSTCO WHSE #121 DISTINCTIVE-LEDGER-7f3a";
+
+        let metadata = serde_json::json!({
+            "tool_calls": [{
+                "name": "search_transactions",
+                "input": {"description": raw},
+                "success": true,
+                "output": format!("found 1 charge: {raw}"),
+            }],
+            "iterations": 2,
+        });
+
+        let metric = NewOllamaMetric {
+            operation: OllamaOperation::ExploreQuery,
+            model: "llama3.1".to_string(),
+            latency_ms: 800,
+            success: true,
+            error_message: None,
+            confidence: None,
+            transaction_id: None,
+            input_text: Some(raw.to_string()),
+            result_text: Some(format!("You spent at {raw}")),
+            metadata: Some(metadata.to_string()),
+        };
+
+        db.record_ollama_metric(&metric).unwrap();
+
+        let recent = db.get_recent_ollama_calls(10).unwrap();
+        assert_eq!(recent.len(), 1);
+        assert!(recent[0].input_text.is_none());
+        assert!(
+            recent[0].result_text.is_none(),
+            "explore result_text must be NULL, got {:?}",
+            recent[0].result_text
+        );
+
+        let stored_meta = recent[0].metadata.as_deref().expect("metadata");
+        let meta: serde_json::Value = serde_json::from_str(stored_meta).unwrap();
+        assert_eq!(meta["iterations"], 2);
+        assert_eq!(meta["tool_calls"][0]["name"], "search_transactions");
+        assert_eq!(meta["tool_calls"][0]["success"], true);
+        assert!(meta["tool_calls"][0].get("input").is_none());
+        assert!(meta["tool_calls"][0].get("output").is_none());
+
+        let conn = db.conn().unwrap();
+        let blob: String = conn
+            .query_row(
+                "SELECT COALESCE(operation,'') || COALESCE(model,'') || COALESCE(error_message,'') || COALESCE(input_text,'') || COALESCE(result_text,'') || COALESCE(metadata,'') FROM ollama_metrics WHERE id = ?",
+                params![recent[0].id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !blob.contains(raw),
+            "tool output description must not appear in the metrics row, got {blob}"
+        );
+    }
+
+    #[test]
     fn test_existing_input_text_cleared_on_open() {
         let db = Database::in_memory().unwrap();
         let path = db.path().to_string();
@@ -641,6 +757,82 @@ mod tests {
             recent[0].input_text.is_none(),
             "leftover input_text must be cleared on open, got {:?}",
             recent[0].input_text
+        );
+    }
+
+    #[test]
+    fn test_existing_explore_tool_payloads_cleared_on_open() {
+        let db = Database::in_memory().unwrap();
+        let path = db.path().to_string();
+        let raw = "COSTCO WHSE #121 DISTINCTIVE-LEDGER-7f3a";
+        let metadata = serde_json::json!({
+            "tool_calls": [{
+                "name": "search_transactions",
+                "input": {"description": raw},
+                "success": true,
+                "output": raw,
+            }],
+            "iterations": 3,
+        });
+
+        {
+            let conn = db.conn().unwrap();
+            conn.execute(
+                r#"
+                INSERT INTO ollama_metrics (
+                    operation, model, latency_ms, success, result_text, metadata
+                ) VALUES ('explore_query', 'llama3.1', 10, 1, ?, ?)
+                "#,
+                params![format!("You spent at {raw}"), metadata.to_string()],
+            )
+            .unwrap();
+            // Other operations still keep their short result text.
+            conn.execute(
+                r#"
+                INSERT INTO ollama_metrics (
+                    operation, model, latency_ms, success, result_text
+                ) VALUES ('classify_merchant', 'llama3.2', 5, 1, 'Netflix → streaming')
+                "#,
+                [],
+            )
+            .unwrap();
+        }
+        drop(db);
+
+        let reopened = Database::new_unencrypted(&path).unwrap();
+        let recent = reopened.get_recent_ollama_calls(10).unwrap();
+        assert_eq!(recent.len(), 2);
+
+        let explore = recent
+            .iter()
+            .find(|m| m.operation == OllamaOperation::ExploreQuery)
+            .expect("explore row");
+        assert!(explore.result_text.is_none());
+        let meta: serde_json::Value =
+            serde_json::from_str(explore.metadata.as_deref().expect("metadata")).unwrap();
+        assert_eq!(meta["iterations"], 3);
+        assert_eq!(meta["tool_calls"][0]["name"], "search_transactions");
+        assert_eq!(meta["tool_calls"][0]["success"], true);
+        assert!(meta["tool_calls"][0].get("input").is_none());
+        assert!(meta["tool_calls"][0].get("output").is_none());
+
+        let classify = recent
+            .iter()
+            .find(|m| m.operation == OllamaOperation::ClassifyMerchant)
+            .expect("classify row");
+        assert_eq!(classify.result_text.as_deref(), Some("Netflix → streaming"));
+
+        let conn = reopened.conn().unwrap();
+        let blob: String = conn
+            .query_row(
+                "SELECT COALESCE(result_text,'') || COALESCE(metadata,'') FROM ollama_metrics WHERE operation = 'explore_query'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            !blob.contains(raw),
+            "leftover explore payloads must be cleared on open, got {blob}"
         );
     }
 
