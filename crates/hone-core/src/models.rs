@@ -1317,8 +1317,11 @@ pub struct OllamaMetric {
     /// Legacy column. New rows are always NULL; leftover prompt/txn text is
     /// cleared on database open. Do not treat this as a stored prompt.
     pub input_text: Option<String>,
+    /// Short outcome for classification-style calls. `explore_query` rows
+    /// are always NULL; leftover assistant text is cleared on database open.
     pub result_text: Option<String>,
-    /// Additional metadata as JSON (e.g., tool calls for explore queries)
+    /// Additional metadata as JSON. Explore rows store tool name, success,
+    /// and iteration count only (no tool input or output).
     pub metadata: Option<String>,
 }
 
@@ -1334,8 +1337,10 @@ pub struct NewOllamaMetric {
     pub transaction_id: Option<i64>,
     /// Accepted by callers but never persisted (privacy: no prompt/txn text).
     pub input_text: Option<String>,
+    /// Persisted for non-explore calls. `explore_query` always stores NULL.
     pub result_text: Option<String>,
-    /// Additional metadata as JSON (e.g., tool calls for explore queries)
+    /// Additional metadata as JSON. Explore tool input/output are stripped
+    /// before insert; only name, success, and iteration count are kept.
     pub metadata: Option<String>,
 }
 

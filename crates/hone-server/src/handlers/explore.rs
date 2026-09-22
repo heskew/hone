@@ -309,22 +309,32 @@ pub async fn query_explore(
         .execute_with_tracking(system_prompt, &payload.query, &tools, prior_messages)
         .await;
 
-    // Record metrics regardless of success/failure
+    // Record metrics regardless of success/failure.
+    // Store tool name, success, and iteration count only. The assistant
+    // reply and tool input/output are ledger text and must not be persisted.
     let latency_ms = start.elapsed().as_millis() as i64;
-    let (success, error_message, response_text, metadata_json) = match &result {
+    let (success, error_message, metadata_json) = match &result {
         Ok(r) => {
-            // Serialize tool calls and iterations for metrics storage
+            let tool_calls: Vec<serde_json::Value> = r
+                .tool_calls
+                .iter()
+                .map(|tc| {
+                    serde_json::json!({
+                        "name": tc.name,
+                        "success": tc.success,
+                    })
+                })
+                .collect();
             let metadata = serde_json::json!({
-                "tool_calls": r.tool_calls,
+                "tool_calls": tool_calls,
                 "iterations": r.iterations,
             });
             let metadata_str = serde_json::to_string(&metadata).ok();
-            (true, None, Some(r.response.clone()), metadata_str)
+            (true, None, metadata_str)
         }
-        Err(e) => (false, Some(e.to_string()), None, None),
+        Err(e) => (false, Some(e.to_string()), None),
     };
 
-    // Record the metric (with tool calls in metadata)
     let metric = NewOllamaMetric {
         operation: OllamaOperation::ExploreQuery,
         model: model_name.clone(),
@@ -334,7 +344,7 @@ pub async fn query_explore(
         confidence: None,
         transaction_id: None,
         input_text: None,
-        result_text: response_text.clone(),
+        result_text: None,
         metadata: metadata_json,
     };
 

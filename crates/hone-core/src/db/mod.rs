@@ -498,6 +498,8 @@ impl Database {
             -- Ollama metrics (tracks each LLM call for observability)
             -- input_text is a leftover column: new rows store NULL and existing
             -- prompt/txn text is cleared below. Do not persist raw input.
+            -- explore_query rows also omit result_text and tool input/output;
+            -- leftover payloads in those columns are cleared below.
             CREATE TABLE IF NOT EXISTS ollama_metrics (
                 id INTEGER PRIMARY KEY,
                 operation TEXT NOT NULL,
@@ -737,6 +739,34 @@ impl Database {
         // CREATE TABLE IF NOT EXISTS cannot rewrite existing columns/rows.
         conn.execute(
             "UPDATE ollama_metrics SET input_text = NULL WHERE input_text IS NOT NULL",
+            [],
+        )?;
+
+        // Privacy: explore_query used to store the assistant reply and full
+        // tool input/output. Keep tool name, success, and iteration count.
+        conn.execute(
+            "UPDATE ollama_metrics SET result_text = NULL WHERE operation = 'explore_query' AND result_text IS NOT NULL",
+            [],
+        )?;
+        conn.execute(
+            r#"
+            UPDATE ollama_metrics
+            SET metadata = json_set(
+                metadata,
+                '$.tool_calls',
+                (
+                    SELECT json_group_array(json_remove(j.value, '$.input', '$.output'))
+                    FROM json_each(ollama_metrics.metadata, '$.tool_calls') AS j
+                )
+            )
+            WHERE operation = 'explore_query'
+              AND json_valid(metadata)
+              AND json_type(metadata, '$.tool_calls') = 'array'
+              AND (
+                instr(metadata, '"input"') > 0
+                OR instr(metadata, '"output"') > 0
+              )
+            "#,
             [],
         )?;
 

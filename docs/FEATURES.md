@@ -133,7 +133,7 @@ See [design/receipts.md](design/receipts.md) for full workflow.
 - Receipt-to-transaction matching evaluation
 - Duplicate detection reasoning
 - Spending anomaly explanations with re-analysis
-- Metrics tracking (latency, success rate, accuracy; prompt/txn text is not persisted)
+- Metrics tracking (latency, success rate, accuracy). Prompt and transaction text are not persisted in `input_text`. `explore_query` rows store tool name, success, and iteration count only: `result_text` is NULL, and tool input/output are not stored. Opening a database clears leftover `input_text` and those explore payloads.
 - AI Metrics page with "Load more" pagination for recent calls
 - AI Orchestrator for agentic analysis (optional, uses tool-calling)
 
@@ -146,6 +146,7 @@ Conversational interface for querying financial data:
 - Suggestion chips for common questions
 - Requires AI orchestrator configuration (`ANTHROPIC_COMPATIBLE_HOST`, `ANTHROPIC_COMPATIBLE_MODEL`)
 - `OLLAMA_HOST` and `ANTHROPIC_COMPATIBLE_HOST` must be local (loopback / RFC1918 / `localhost` / `*.local` / Docker names) unless `HONE_ALLOW_REMOTE_AI=1`
+- AI Metrics records each `explore_query` as tool name, success, and iteration count. `result_text` is NULL. Tool input and output are not stored. Opening a database clears leftover explore payloads the same way leftover `input_text` is cleared.
 
 ## Insight Engine
 
