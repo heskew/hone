@@ -5,7 +5,7 @@ use axum::{extract::State, Json};
 use serde::Serialize;
 use std::sync::Arc;
 
-use crate::{get_client_ip, get_user_email, AppState};
+use crate::{get_client_ip, get_user_email, AppState, AuthPrincipal};
 
 /// Response for the /api/me endpoint
 #[derive(Serialize)]
@@ -25,9 +25,6 @@ pub async fn get_me(State(state): State<Arc<AppState>>, request: Request) -> Jso
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
         .copied();
-    let headers = request.headers();
-    let header_user = get_user_email(headers);
-
     // Get the real client IP (respects trusted proxies)
     let client_ip = get_client_ip(
         &request,
@@ -35,37 +32,30 @@ pub async fn get_me(State(state): State<Arc<AppState>>, request: Request) -> Jso
         &state.config.trusted_proxies,
     );
 
-    // Check if this is a trusted network request (no CF headers, but auth passed)
-    let is_trusted_network = header_user == "local-dev"
-        && state.config.require_auth
-        && !state.config.trusted_networks.is_empty()
-        && client_ip
-            .map(|ip| {
-                state
-                    .config
-                    .trusted_networks
-                    .iter()
-                    .any(|net| net.contains(&ip))
-            })
-            .unwrap_or(false);
+    // Middleware principal. `cloudflare_jwt` is set only after the JWT check
+    // succeeds — never because CF_TEAM_NAME / CF_AUD_TAG happen to be set.
+    if let Some(principal) = request.extensions().get::<AuthPrincipal>().cloned() {
+        if principal.method == "trusted_network" {
+            let ip = client_ip.map(|ip| ip.to_string()).unwrap_or(principal.user);
+            return Json(MeResponse {
+                user: ip,
+                auth_method: principal.method.to_string(),
+            });
+        }
+        return Json(MeResponse {
+            user: principal.user,
+            auth_method: principal.method.to_string(),
+        });
+    }
 
-    let (user, auth_method) = if is_trusted_network {
-        // Format IP as the user identifier
-        let ip = client_ip.map(|ip| ip.to_string()).unwrap_or_default();
-        (ip, "trusted_network")
-    } else if header_user == "api-key" {
+    // `--no-auth` skips the middleware principal. Do not infer cloudflare_jwt.
+    let header_user = get_user_email(request.headers());
+    let (user, auth_method) = if header_user == "api-key" {
         (header_user, "api_key")
     } else if header_user == "local-dev" {
         (header_user, "none")
     } else if header_user.contains('@') {
-        // Check if we have JWT validation configured
-        let method =
-            if state.config.cf_jwt.team_name.is_some() && state.config.cf_jwt.audience.is_some() {
-                "cloudflare_jwt"
-            } else {
-                "cloudflare_header"
-            };
-        (header_user, method)
+        (header_user, "cloudflare_header")
     } else {
         (header_user, "unknown")
     };

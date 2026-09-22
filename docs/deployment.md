@@ -62,8 +62,8 @@ Access Hone at http://localhost:3000
 
 Hone supports these authentication methods:
 
-1. **Cloudflare Access JWT** (recommended) - Cryptographically validates `Cf-Access-Jwt-Assertion` header
-2. **Cloudflare Access header** (fallback) - Trusts `CF-Access-Authenticated-User-Email` header
+1. **Cloudflare Access JWT** (recommended) - Cryptographically validates `Cf-Access-Jwt-Assertion`. When `CF_TEAM_NAME` and `CF_AUD_TAG` are both set, this check is required for Cloudflare Access; the email header alone is rejected.
+2. **Cloudflare Access header** (only when JWT validation is not configured) - Trusts `CF-Access-Authenticated-User-Email`
 3. **API Keys** - For internal services, use `Authorization: Bearer <key>` header (`HONE_API_KEYS`)
 4. **MCP OAuth resource server** - Audience-bound JWTs for `/mcp` (`HONE_MCP_RESOURCE` + `HONE_MCP_JWT_SECRET` or `HONE_MCP_JWKS_URL`). Opaque `HONE_MCP_KEYS` remain as a local fallback
 5. **Trusted Networks** - Requests from configured IP addresses/subnets bypass auth
@@ -106,9 +106,16 @@ Add cookie-aware CSRF tokens (or keep this layer and audit cookie `SameSite`) if
 
 #### JWT Validation (Recommended)
 
-When `CF_TEAM_NAME` and `CF_AUD_TAG` are configured, Hone validates the JWT in the
-`Cf-Access-Jwt-Assertion` header against Cloudflare's public keys. This provides
-cryptographic proof that requests came through Cloudflare Access.
+When `CF_TEAM_NAME` and `CF_AUD_TAG` are both set, Hone validates the JWT in the
+`Cf-Access-Jwt-Assertion` header against Cloudflare's public keys (RS256,
+configured audience and issuer, unexpired signature). That check is required
+for Cloudflare Access:
+
+- A request that sends only `CF-Access-Authenticated-User-Email` is rejected (`401`) on `/api` and `/mcp`.
+- A token with the wrong audience, issuer, expiry, or signature is rejected. Hone does not fall back to the email header.
+- If Cloudflare's certs endpoint cannot be reached, the JWT check fails closed the same way. There is no email-header fallback during key rotation or an outage.
+- `/api/me` reports `auth_method: "cloudflare_jwt"` only after that validation succeeds. Handler audit rows use the validated identity. A different email header on the same request does not change the audit user.
+- API keys and trusted networks still authenticate on their own. They are separate credentials, not a fallback for a missing or invalid Access JWT.
 
 1. Get your **team name** from the Cloudflare Zero Trust dashboard URL:
    `https://one.dash.cloudflare.com/<account-id>/<team-name>/...`
@@ -124,7 +131,8 @@ cryptographic proof that requests came through Cloudflare Access.
 
 #### Header-Only Authentication (Fallback)
 
-Without JWT config, Hone trusts the `CF-Access-Authenticated-User-Email` header.
+This path is used only when `CF_TEAM_NAME` and `CF_AUD_TAG` are not both set.
+Hone then trusts the `CF-Access-Authenticated-User-Email` header.
 This is safe **only** when behind Cloudflare Tunnel, which strips and rewrites
 CF headers. If you bypass Cloudflare, anyone can spoof these headers.
 

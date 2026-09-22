@@ -64,9 +64,8 @@ pub struct CfJwtConfig {
     /// Application audience tag (aud claim) - from CF Access application settings
     /// Required for JWT validation
     pub audience: Option<String>,
-    /// Cached public keys for JWT validation (populated at runtime)
-    /// Keys are fetched from https://<team>.cloudflareaccess.com/cdn-cgi/access/certs
-    #[allow(dead_code)]
+    /// When set, JWT checks use these keys and skip the certs endpoint.
+    /// Production leaves this empty and fetches keys per request. Tests inject a local JWK.
     pub cached_keys: Option<CfPublicKeys>,
 }
 
@@ -161,6 +160,18 @@ fn log_auth_outcome(
     }
 }
 
+/// Identity established by [`auth_middleware`], stored on the request.
+///
+/// `/api/me` reads this. Handler audit rows use the same user via the
+/// rewritten `CF-Access-Authenticated-User-Email` header (see
+/// [`install_auth_principal`]).
+#[derive(Clone, Debug)]
+pub(crate) struct AuthPrincipal {
+    pub user: String,
+    /// `/api/me` `auth_method` (`cloudflare_jwt`, `cloudflare_header`, …).
+    pub method: &'static str,
+}
+
 /// Authentication middleware - validates Cloudflare Access JWT, headers, API keys, or trusted networks
 ///
 /// # Security Notes
@@ -169,15 +180,22 @@ fn log_auth_outcome(
 /// Use this for local network access (e.g., "192.168.1.0/24"). The client IP is determined
 /// from the TCP connection peer address only (headers are NOT trusted to prevent spoofing).
 ///
-/// **Cloudflare Access JWT** (recommended): The `Cf-Access-Jwt-Assertion` header contains a
-/// cryptographically signed JWT. When `CF_TEAM_NAME` and `CF_AUD_TAG` are configured, this
-/// JWT is validated against Cloudflare's public keys, providing cryptographic proof that
-/// the request came through Cloudflare Access.
+/// **Cloudflare Access JWT** (required when configured): When both `CF_TEAM_NAME` and
+/// `CF_AUD_TAG` are set, `Cf-Access-Jwt-Assertion` must be a valid RS256 JWT for that
+/// audience and issuer. A missing token, a bad signature, the wrong `aud` / `iss` / `exp`,
+/// or a certs-endpoint failure does **not** fall through to
+/// `CF-Access-Authenticated-User-Email`. `/api/me` returns `cloudflare_jwt` only after
+/// this check succeeds. API keys and trusted networks are separate credentials and still
+/// apply; they are not an email-header fallback.
 ///
-/// **Cloudflare Access headers** (fallback): The `CF-Access-Authenticated-User-Email` header
-/// is trusted only when JWT validation is not configured. This header is safe behind
-/// Cloudflare Tunnel (which strips/rewrites CF headers), but can be spoofed if the server
-/// is exposed directly to the internet.
+/// **Cloudflare Access headers** (only when JWT validation is not configured): The
+/// `CF-Access-Authenticated-User-Email` header is trusted only when `CF_TEAM_NAME` and
+/// `CF_AUD_TAG` are not both set. That header is safe behind Cloudflare Tunnel (which
+/// strips and rewrites CF headers) and can be spoofed if the server is exposed directly.
+///
+/// The authenticated user is stored as [`AuthPrincipal`] and written over the email
+/// header so handler `log_audit` rows match this principal. A second email header on
+/// the same request cannot rename the action row.
 ///
 /// **API keys**: Compared using constant-time comparison to prevent timing attacks.
 /// Accepted on `/api` and `/mcp`.
@@ -188,7 +206,7 @@ fn log_auth_outcome(
 /// tokens must include the MCP resource in `aud` (RFC 8707). Rejected on `/api`.
 pub(crate) async fn auth_middleware(
     State(auth): State<Arc<AuthLayerState>>,
-    request: Request,
+    mut request: Request,
     next: Next,
 ) -> Response {
     // axum 0.8 removed the blanket Option<T> extractor; read ConnectInfo from
@@ -229,6 +247,7 @@ pub(crate) async fn auth_middleware(
         if let Some(ip) = client_ip {
             if is_ip_trusted(&ip, &config.trusted_networks) {
                 info!(ip = %ip, path = %path, "Authenticated via trusted network");
+                install_auth_principal(&mut request, "local-dev", "trusted_network");
                 log_auth_outcome(
                     &auth.db,
                     "local-dev",
@@ -242,16 +261,28 @@ pub(crate) async fn auth_middleware(
         }
     }
 
-    // Check for Cloudflare Access JWT first (cryptographic verification)
-    if config.cf_jwt.team_name.is_some() && config.cf_jwt.audience.is_some() {
-        if let Some(jwt) = request
-            .headers()
-            .get(CF_ACCESS_JWT_HEADER)
-            .and_then(|v| v.to_str().ok())
-        {
+    // Own the header values before mutating the request on success.
+    let jwt_header = request
+        .headers()
+        .get(CF_ACCESS_JWT_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string);
+    let cf_user = request
+        .headers()
+        .get(CF_ACCESS_USER_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    // Both CF variables set: the email header is not a credential. A missing
+    // JWT, a failed certs fetch, or a rejected token must not authenticate it.
+    let jwt_configured = config.cf_jwt.team_name.is_some() && config.cf_jwt.audience.is_some();
+    if jwt_configured {
+        if let Some(jwt) = jwt_header.as_deref() {
             match validate_cf_jwt(jwt, &config.cf_jwt).await {
                 Ok(email) => {
                     info!(user = %email, path = %path, "Authenticated via Cloudflare JWT");
+                    install_auth_principal(&mut request, &email, "cloudflare_jwt");
                     log_auth_outcome(
                         &auth.db,
                         &email,
@@ -264,34 +295,19 @@ pub(crate) async fn auth_middleware(
                 }
                 Err(e) => {
                     warn!(error = %e, path = %path, "Invalid Cloudflare JWT");
-                    // Fall through to try other auth methods
                 }
             }
         }
-    }
-
-    // Check for Cloudflare Access user header (trusted when behind CF Tunnel)
-    // SECURITY: Only use this fallback when JWT validation is not configured.
-    // If JWT config is set but validation failed, we still check this header
-    // to allow for graceful degradation during key rotation.
-    let cf_user = request
-        .headers()
-        .get(CF_ACCESS_USER_HEADER)
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty());
-
-    if let Some(email) = cf_user {
-        // Warn if JWT config is set but we're falling back to header-only auth
-        if config.cf_jwt.team_name.is_some() {
+        if cf_user.is_some() {
             warn!(
-                user = %email,
                 path = %path,
-                "Authenticated via CF header (JWT validation configured but no valid JWT)"
+                jwt_present = jwt_header.is_some(),
+                "Ignoring CF email header because JWT validation is configured"
             );
-        } else {
-            info!(user = %email, path = %path, "Authenticated via Cloudflare Access header");
         }
+    } else if let Some(email) = cf_user.as_deref() {
+        info!(user = %email, path = %path, "Authenticated via Cloudflare Access header");
+        install_auth_principal(&mut request, email, "cloudflare_header");
         log_auth_outcome(
             &auth.db,
             email,
@@ -310,17 +326,19 @@ pub(crate) async fn auth_middleware(
         .headers()
         .get(AUTHORIZATION_HEADER)
         .and_then(|v| v.to_str().ok())
-        .and_then(|auth| auth.strip_prefix("Bearer "));
+        .and_then(|auth| auth.strip_prefix("Bearer "))
+        .map(str::to_string);
 
-    if let Some(token) = bearer {
+    if let Some(token) = bearer.as_deref() {
         if let Some(user) = accept_bearer(&path, token, config) {
             info!(user, path = %path, "Authenticated via Bearer token");
-            let via = match user {
-                "api-key" => "api_key",
-                "mcp-key" => "mcp_key",
-                "mcp-token" => "mcp_jwt",
-                other => other,
+            let (via, me_method) = match user {
+                "api-key" => ("api_key", "api_key"),
+                "mcp-key" => ("mcp_key", "mcp_key"),
+                "mcp-token" => ("mcp_jwt", "mcp_jwt"),
+                other => (other, other),
             };
+            install_auth_principal(&mut request, user, me_method);
             log_auth_outcome(&auth.db, user, "auth_allow", &method, &path, Some(via));
             return next.run(request).await;
         }
@@ -338,6 +356,7 @@ pub(crate) async fn auth_middleware(
                             .is_ok()
                         {
                             info!(user = "mcp-token", path = %path, "Authenticated via MCP JWT");
+                            install_auth_principal(&mut request, "mcp-token", "mcp_jwt");
                             log_auth_outcome(
                                 &auth.db,
                                 "mcp-token",
@@ -360,6 +379,31 @@ pub(crate) async fn auth_middleware(
     warn!(path = %path, "Unauthorized request - no valid auth");
     log_auth_outcome(&auth.db, "anonymous", "auth_deny", &method, &path, None);
     unauthorized_mcp_or_api(&path, config)
+}
+
+/// Bind the middleware principal to the request.
+///
+/// Handlers call [`get_user_email`], which reads `CF-Access-Authenticated-User-Email`.
+/// Replace that header with `user` so a second client-supplied email cannot rename
+/// the audit action row. `/api/me` reads [`AuthPrincipal`] for the method, which
+/// is `cloudflare_jwt` only after JWT validation succeeds.
+fn install_auth_principal(request: &mut Request, user: &str, method: &'static str) {
+    request.extensions_mut().insert(AuthPrincipal {
+        user: user.to_string(),
+        method,
+    });
+    request.headers_mut().remove(CF_ACCESS_USER_HEADER);
+    match HeaderValue::from_str(user) {
+        Ok(value) => {
+            request.headers_mut().insert(CF_ACCESS_USER_HEADER, value);
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                "Auth principal is not a valid header value; handler audit falls back"
+            );
+        }
+    }
 }
 
 fn unauthorized_mcp_or_api(path: &str, config: &ServerConfig) -> Response {
@@ -386,12 +430,17 @@ fn unauthorized_mcp_or_api(path: &str, config: &ServerConfig) -> Response {
 /// Fetches public keys from Cloudflare and validates the JWT signature, expiration,
 /// issuer, and audience claim. Cloudflare Access tokens are RS256.
 async fn validate_cf_jwt(token: &str, config: &CfJwtConfig) -> Result<String, String> {
+    if let Some(cached) = &config.cached_keys {
+        return validate_cf_jwt_with_keys(token, config, &cached.keys);
+    }
+
     let team_name = config
         .team_name
         .as_ref()
         .ok_or("Team name not configured")?;
 
-    // Fetch public keys from Cloudflare
+    // Fetch public keys from Cloudflare. A failure here is an error: callers
+    // must not treat the spoofable email header as a successful JWT check.
     let certs_url = format!(
         "https://{}.cloudflareaccess.com/cdn-cgi/access/certs",
         team_name
@@ -624,8 +673,12 @@ pub fn parse_trusted_networks(input: &str) -> Vec<ipnet::IpNet> {
         .collect()
 }
 
-/// Extract user email from request headers (for audit logging)
-/// Returns CF Access email, "api-key" for API key auth, or "local-dev" for unauthenticated
+/// User label for handler `log_audit` rows.
+///
+/// After [`auth_middleware`] succeeds, this is the principal it installed
+/// (JWT `email`/`sub`, `api-key`, `local-dev`, …), not a second client-supplied
+/// email. With auth disabled, falls back to the raw header, then Bearer, then
+/// `local-dev`.
 pub fn get_user_email(headers: &axum::http::HeaderMap) -> String {
     // Check for Cloudflare Access user first
     if let Some(email) = headers
