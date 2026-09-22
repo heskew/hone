@@ -97,8 +97,9 @@ pub struct ServerConfig {
     /// Trusted networks that bypass authentication (e.g., "192.168.1.0/24", "10.0.0.5")
     /// Requests from these IPs are allowed without any authentication
     pub trusted_networks: Vec<ipnet::IpNet>,
-    /// Trusted proxies whose X-Forwarded-For headers are trusted (e.g., "10.42.0.0/16" for k3s)
-    /// When a request comes from a trusted proxy, the client IP is extracted from X-Forwarded-For
+    /// Trusted proxies whose forwarded headers may be used (e.g., "10.42.0.0/16" for k3s).
+    /// When the TCP peer is in this list, the client IP is the rightmost `X-Forwarded-For`
+    /// hop that is not itself in this list.
     pub trusted_proxies: Vec<ipnet::IpNet>,
 }
 
@@ -177,8 +178,10 @@ pub(crate) struct AuthPrincipal {
 /// # Security Notes
 ///
 /// **Trusted networks**: Requests from IPs in `trusted_networks` bypass all authentication.
-/// Use this for local network access (e.g., "192.168.1.0/24"). The client IP is determined
-/// from the TCP connection peer address only (headers are NOT trusted to prevent spoofing).
+/// Use this for local network access (e.g., "192.168.1.0/24"). The client IP is the TCP
+/// peer, unless that peer is in `trusted_proxies`. Then it is the rightmost
+/// `X-Forwarded-For` hop that is not itself a trusted proxy. `X-Real-IP` is used only
+/// when `X-Forwarded-For` is absent.
 ///
 /// **Cloudflare Access JWT** (required when configured): When both `CF_TEAM_NAME` and
 /// `CF_AUD_TAG` are set, `Cf-Access-Jwt-Assertion` must be a valid RS256 JWT for that
@@ -581,14 +584,18 @@ fn validate_api_key(provided: &str, valid_keys: &[String]) -> bool {
     false
 }
 
-/// Extract client IP address, respecting trusted proxies
+/// Extract client IP address, respecting trusted proxies.
 ///
-/// SECURITY: X-Forwarded-For headers are ONLY trusted when the TCP connection
-/// comes from a configured trusted proxy. Otherwise, only the actual TCP
-/// peer address is used (to prevent header spoofing attacks).
+/// SECURITY: `X-Forwarded-For` and `X-Real-IP` are used only when the TCP peer
+/// is in `trusted_proxies`. Otherwise the peer address is the client.
 ///
-/// When behind a reverse proxy (like Traefik in k3s), configure HONE_TRUSTED_PROXIES
-/// to the proxy's IP/CIDR so that the real client IP can be extracted from headers.
+/// When the peer is a trusted proxy and `X-Forwarded-For` is present, the client
+/// is the rightmost hop that is not itself in `trusted_proxies`. Proxies append
+/// hops (`client, proxy1, proxy2`), so the leftmost address is client-controlled.
+/// `X-Real-IP` is consulted only when `X-Forwarded-For` is absent.
+///
+/// When behind a reverse proxy (like Traefik in k3s), configure `HONE_TRUSTED_PROXIES`
+/// to the proxy's IP/CIDR so the real client IP can be taken from the header.
 pub(crate) fn get_client_ip(
     request: &Request,
     connect_info: Option<&axum::extract::ConnectInfo<std::net::SocketAddr>>,
@@ -596,43 +603,80 @@ pub(crate) fn get_client_ip(
 ) -> Option<std::net::IpAddr> {
     let peer_ip = connect_info.map(|ci| ci.0.ip())?;
 
-    // If no trusted proxies configured, only use peer address
     if trusted_proxies.is_empty() {
         return Some(peer_ip);
     }
 
-    // Check if the peer is a trusted proxy
     let peer_is_trusted_proxy = trusted_proxies.iter().any(|net| net.contains(&peer_ip));
+    if !peer_is_trusted_proxy {
+        return Some(peer_ip);
+    }
 
-    if peer_is_trusted_proxy {
-        // Trust X-Forwarded-For from this proxy
-        // X-Forwarded-For format: "client, proxy1, proxy2" - take the first (original client)
-        if let Some(forwarded_for) = request
-            .headers()
-            .get("x-forwarded-for")
-            .and_then(|v| v.to_str().ok())
-        {
-            if let Some(client_ip_str) = forwarded_for.split(',').next() {
-                if let Ok(client_ip) = client_ip_str.trim().parse::<std::net::IpAddr>() {
-                    return Some(client_ip);
-                }
-            }
-        }
-
-        // Fallback: try X-Real-IP header
-        if let Some(real_ip) = request
-            .headers()
-            .get("x-real-ip")
-            .and_then(|v| v.to_str().ok())
-        {
-            if let Ok(client_ip) = real_ip.trim().parse::<std::net::IpAddr>() {
+    // Header present: reconstruct from every X-Forwarded-For value, in order.
+    // A proxy may append a second header rather than extending the first.
+    // Do not let X-Real-IP override that chain, including when every hop is a
+    // trusted proxy or a hop cannot be parsed.
+    if request.headers().contains_key("x-forwarded-for") {
+        if let Some(forwarded_for) = joined_forwarded_for(request.headers()) {
+            if let Some(client_ip) = client_ip_from_forwarded_for(&forwarded_for, trusted_proxies) {
                 return Some(client_ip);
             }
         }
+        return Some(peer_ip);
     }
 
-    // Default to peer address
+    if let Some(real_ip) = request
+        .headers()
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+    {
+        if let Ok(client_ip) = real_ip.trim().parse::<std::net::IpAddr>() {
+            return Some(client_ip);
+        }
+    }
+
     Some(peer_ip)
+}
+
+/// Join every `X-Forwarded-For` field in order. `None` if any value is not
+/// valid text — that value is not a trusted-proxy hop, so the chain stops.
+fn joined_forwarded_for(headers: &axum::http::HeaderMap) -> Option<String> {
+    let mut parts = Vec::new();
+    for value in headers.get_all("x-forwarded-for") {
+        let text = value.to_str().ok()?;
+        let text = text.trim();
+        if !text.is_empty() {
+            parts.push(text);
+        }
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(parts.join(","))
+}
+
+/// Rightmost `X-Forwarded-For` hop that is not a trusted proxy.
+///
+/// An unparseable hop is not a trusted proxy. Stop there so an address further
+/// left cannot be selected.
+fn client_ip_from_forwarded_for(
+    forwarded_for: &str,
+    trusted_proxies: &[ipnet::IpNet],
+) -> Option<std::net::IpAddr> {
+    for hop in forwarded_for.rsplit(',') {
+        let hop = hop.trim();
+        if hop.is_empty() {
+            continue;
+        }
+        let Ok(ip) = hop.parse::<std::net::IpAddr>() else {
+            return None;
+        };
+        if trusted_proxies.iter().any(|net| net.contains(&ip)) {
+            continue;
+        }
+        return Some(ip);
+    }
+    None
 }
 
 /// Check if an IP address is within any of the trusted networks

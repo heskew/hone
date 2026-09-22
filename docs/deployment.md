@@ -56,7 +56,7 @@ Access Hone at http://localhost:3000
 | `HONE_MCP_AUTHORIZATION_SERVERS` | No | AS issuer URIs advertised in RFC 9728 metadata (comma-separated) |
 | `HONE_MCP_KEYS` | No | Opaque MCP-only keys (accepted on `/mcp`, rejected on `/api`; not OAuth tokens) |
 | `HONE_TRUSTED_NETWORKS` | No | Comma-separated IPs/CIDRs that bypass auth |
-| `HONE_TRUSTED_PROXIES` | No | Comma-separated proxy IPs/CIDRs to trust X-Forwarded-For from |
+| `HONE_TRUSTED_PROXIES` | No | Comma-separated proxy IPs/CIDRs. `X-Forwarded-For` is used only from these peers; the client is the rightmost hop outside this set |
 
 ### Authentication
 
@@ -216,7 +216,7 @@ For local network access without authentication (e.g., accessing Hone from your 
 **Trusted networks security notes:**
 - Only use for networks you fully trust (e.g., home LAN behind firewall)
 - Individual IPs are automatically treated as /32 (IPv4) or /128 (IPv6)
-- Client IP is determined from the TCP connection by default (X-Forwarded-For is NOT trusted unless from a trusted proxy)
+- Client IP is the TCP peer, unless that peer is in `HONE_TRUSTED_PROXIES` (see Trusted Proxies below for which `X-Forwarded-For` hop is used)
 - Combine with Cloudflare Access for remote access while allowing local network bypass
 
 ### Trusted Proxies Setup
@@ -239,9 +239,17 @@ When Hone runs behind a reverse proxy (e.g., Traefik in k3s, nginx), it sees the
 
 **Trusted proxies security notes:**
 - Only trust proxies you control (never trust arbitrary IPs)
-- X-Forwarded-For is only parsed when the TCP connection comes from a trusted proxy
+- `X-Forwarded-For` is parsed only when the TCP connection comes from a trusted proxy. Otherwise the peer address is the client and forwarded headers are ignored
+- The client address is the rightmost `X-Forwarded-For` hop that is outside `HONE_TRUSTED_PROXIES`. Each proxy appends the address it saw (`client, proxy1, proxy2`), either on the same field or as another `X-Forwarded-For` header. Those fields are read in order. Walk from the right, skip hops that fall in `HONE_TRUSTED_PROXIES`, and use the first remaining hop. The leftmost address is supplied by the original client; using it for trusted-network auth would accept a prepended `HONE_TRUSTED_NETWORKS` address
+- `X-Real-IP` is ignored when `X-Forwarded-For` is present. It is a fallback only when the peer is a trusted proxy and `X-Forwarded-For` is absent
+- The trusted proxy must append or replace `X-Forwarded-For`. Forwarding the client header unchanged leaves the rightmost hop under the client's control
 - This is required for trusted networks to work behind reverse proxies
 - Common proxy CIDRs: `10.42.0.0/16` (k3s), `10.244.0.0/16` (standard k8s), `172.17.0.0/16` (Docker)
+
+Example: `HONE_TRUSTED_PROXIES=10.42.0.0/16` and `HONE_TRUSTED_NETWORKS=10.1.1.0/24`.
+
+- `X-Forwarded-For: 203.0.113.9, 10.1.1.5, 10.42.0.8` authenticates as `10.1.1.5`. `10.42.0.8` is a trusted proxy and is skipped; `10.1.1.5` is the client
+- `X-Forwarded-For: 10.1.1.5, 203.0.113.9` stays unauthenticated. `203.0.113.9` is outside `HONE_TRUSTED_PROXIES`, so it is the client. A prepended `10.1.1.5` and an `X-Real-IP: 10.1.1.5` do not change that
 
 ## Network Isolation
 
