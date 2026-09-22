@@ -918,6 +918,238 @@ fn test_cf_jwt_rejects_missing_kid() {
     assert!(err.contains("missing key ID"), "{err}");
 }
 
+fn jwt_gate_config() -> ServerConfig {
+    ServerConfig {
+        require_auth: true,
+        cf_jwt: CfJwtConfig {
+            team_name: Some(TEST_JWT_TEAM.to_string()),
+            audience: Some(TEST_JWT_AUD.to_string()),
+            cached_keys: Some(CfPublicKeys {
+                keys: vec![test_cf_jwk()],
+                fetched_at: std::time::Instant::now(),
+            }),
+        },
+        ..Default::default()
+    }
+}
+
+fn jwt_gate_app(db: Database) -> Router {
+    create_router(db, None, jwt_gate_config())
+}
+
+const SPOOFED_CF_EMAIL: &str = "spoofed@example.com";
+
+#[tokio::test]
+async fn test_cf_email_header_rejected_when_jwt_configured() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let app = jwt_gate_app(db.clone());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tags")
+                .header("cf-access-authenticated-user-email", SPOOFED_CF_EMAIL)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries.iter().any(|e| {
+            e.action == "auth_deny"
+                && e.user_email == "anonymous"
+                && e.details.as_deref() == Some("GET /api/tags")
+        }),
+        "header-only auth must be denied while JWT config is on, got {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|e| e.user_email != SPOOFED_CF_EMAIL),
+        "spoofed email must not be recorded as authenticated, got {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_mcp_cf_email_header_rejected_when_jwt_configured() {
+    let db = Database::in_memory().unwrap();
+    let app = mcp::create_mcp_router(db.clone(), &[], jwt_gate_config());
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("content-type", "application/json")
+                .header("cf-access-authenticated-user-email", SPOOFED_CF_EMAIL)
+                .body(Body::from(
+                    r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+                ))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries
+            .iter()
+            .any(|e| { e.action == "auth_deny" && e.details.as_deref() == Some("POST /mcp") }),
+        "MCP must deny the email header while JWT config is on, got {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_cf_jwt_auth_reports_cloudflare_jwt_not_header() {
+    let db = Database::in_memory().unwrap();
+    let app = jwt_gate_app(db);
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/me")
+                .header("cf-access-jwt-assertion", token.as_str())
+                .header("cf-access-authenticated-user-email", SPOOFED_CF_EMAIL)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = get_body_json(response).await;
+    assert_eq!(json["user"], "user@example.com");
+    assert_eq!(json["auth_method"], "cloudflare_jwt");
+}
+
+#[tokio::test]
+async fn test_cf_jwt_handler_audit_uses_jwt_principal_not_email_header() {
+    let db = Database::in_memory().unwrap();
+    db.seed_root_tags().unwrap();
+    let app = jwt_gate_app(db.clone());
+    let token = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/api/tags")
+                .header("cf-access-jwt-assertion", token.as_str())
+                .header("cf-access-authenticated-user-email", SPOOFED_CF_EMAIL)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries.iter().any(|e| {
+            e.action == "list"
+                && e.entity_type.as_deref() == Some("tag")
+                && e.user_email == "user@example.com"
+        }),
+        "handler audit user must be the JWT principal, got {entries:?}"
+    );
+    assert!(
+        entries.iter().all(|e| e.user_email != SPOOFED_CF_EMAIL),
+        "a second email header must not rename the audit row, got {entries:?}"
+    );
+}
+
+#[tokio::test]
+async fn test_invalid_cf_jwt_does_not_fall_through_to_email_header() {
+    let mut wrong_aud = valid_test_claims();
+    wrong_aud.aud = "some-other-application".to_string();
+    let mut wrong_iss = valid_test_claims();
+    wrong_iss.iss = "https://other-team.cloudflareaccess.com".to_string();
+    let mut expired = valid_test_claims();
+    expired.exp = chrono::Utc::now().timestamp() - 3600;
+    expired.iat = expired.exp - 3600;
+
+    let valid = mint_test_jwt(
+        &valid_test_claims(),
+        Some(TEST_JWT_KID),
+        jsonwebtoken::Algorithm::RS256,
+    );
+    let (head, rest) = valid.rsplit_once('.').expect("jwt has signature");
+    let mut sig = rest.to_string();
+    let flipped = if sig.ends_with('A') { 'B' } else { 'A' };
+    sig.pop();
+    sig.push(flipped);
+    let bad_sig = format!("{head}.{sig}");
+
+    let cases = [
+        (
+            "wrong aud",
+            mint_test_jwt(
+                &wrong_aud,
+                Some(TEST_JWT_KID),
+                jsonwebtoken::Algorithm::RS256,
+            ),
+        ),
+        (
+            "wrong iss",
+            mint_test_jwt(
+                &wrong_iss,
+                Some(TEST_JWT_KID),
+                jsonwebtoken::Algorithm::RS256,
+            ),
+        ),
+        (
+            "expired",
+            mint_test_jwt(&expired, Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256),
+        ),
+        ("bad signature", bad_sig),
+    ];
+
+    for (label, token) in cases {
+        let db = Database::in_memory().unwrap();
+        db.seed_root_tags().unwrap();
+        let app = jwt_gate_app(db.clone());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/api/tags")
+                    .header("cf-access-jwt-assertion", token)
+                    .header("cf-access-authenticated-user-email", SPOOFED_CF_EMAIL)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::UNAUTHORIZED,
+            "{label} must not fall through to the email header"
+        );
+        let entries = db.list_audit_log(20).unwrap();
+        assert!(
+            entries.iter().any(|e| e.action == "auth_deny"),
+            "{label} must be an auth deny, got {entries:?}"
+        );
+        assert!(
+            entries.iter().all(|e| e.user_email != SPOOFED_CF_EMAIL),
+            "{label} must not record the spoofed email, got {entries:?}"
+        );
+    }
+}
+
 // ========== New Reports API Tests ==========
 
 #[tokio::test]
