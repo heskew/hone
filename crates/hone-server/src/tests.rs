@@ -697,6 +697,230 @@ async fn test_auth_with_header() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+fn trusted_proxy_auth_config() -> ServerConfig {
+    ServerConfig {
+        require_auth: true,
+        trusted_networks: parse_trusted_networks("10.1.1.0/24"),
+        trusted_proxies: parse_trusted_networks("10.42.0.0/16"),
+        ..Default::default()
+    }
+}
+
+fn request_from_peer(uri: &str, peer: &str) -> Request<Body> {
+    let mut req = Request::builder().uri(uri).body(Body::empty()).unwrap();
+    let addr: std::net::SocketAddr = peer.parse().unwrap();
+    req.extensions_mut()
+        .insert(axum::extract::ConnectInfo(addr));
+    req
+}
+
+fn proxy_request(uri: &str, xff: &str, x_real_ip: Option<&str>) -> Request<Body> {
+    let mut builder = Request::builder().uri(uri).header("x-forwarded-for", xff);
+    if let Some(real_ip) = x_real_ip {
+        builder = builder.header("x-real-ip", real_ip);
+    }
+    let mut req = builder.body(Body::empty()).unwrap();
+    // Peer is inside HONE_TRUSTED_PROXIES (10.42.0.0/16).
+    let addr: std::net::SocketAddr = "10.42.0.7:443".parse().unwrap();
+    req.extensions_mut()
+        .insert(axum::extract::ConnectInfo(addr));
+    req
+}
+
+fn connect_info(peer: &str) -> axum::extract::ConnectInfo<std::net::SocketAddr> {
+    axum::extract::ConnectInfo(peer.parse().unwrap())
+}
+
+#[tokio::test]
+async fn test_prepended_trusted_network_xff_is_not_authenticated() {
+    let db = Database::in_memory().unwrap();
+    let app = create_router(db, None, trusted_proxy_auth_config());
+
+    // Leftmost hop is inside HONE_TRUSTED_NETWORKS. The rightmost hop is the
+    // client and is outside both trusted proxies and trusted networks.
+    // X-Real-IP repeats the spoofed address and must not override XFF.
+    let response = app
+        .oneshot(proxy_request(
+            "/api/me",
+            "10.1.1.5, 203.0.113.9",
+            Some("10.1.1.5"),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn test_rightmost_non_proxy_xff_hop_authenticates_trusted_network() {
+    let db = Database::in_memory().unwrap();
+    let app = create_router(db.clone(), None, trusted_proxy_auth_config());
+
+    // Prepended public address, real client in the trusted network, then a
+    // trusted-proxy hop that must be stripped. X-Real-IP is the public address.
+    let response = app
+        .oneshot(proxy_request(
+            "/api/me",
+            "203.0.113.9, 10.1.1.5, 10.42.0.8",
+            Some("203.0.113.9"),
+        ))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = get_body_json(response).await;
+    assert_eq!(json["auth_method"], "trusted_network");
+    assert_eq!(json["user"], "10.1.1.5");
+
+    let entries = db.list_audit_log(20).unwrap();
+    assert!(
+        entries.iter().any(|e| {
+            e.action == "auth_allow" && e.details.as_deref() == Some("GET /api/me trusted_network")
+        }),
+        "trusted-network allow must record the auth method, got {entries:?}"
+    );
+}
+
+#[test]
+fn client_ip_uses_rightmost_non_proxy_xff_hop() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "10.1.1.5, 203.0.113.9")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("203.0.113.9".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_strips_trusted_proxy_hops_from_the_right() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "203.0.113.9, 10.1.1.5, 10.42.0.8")
+        .header("x-real-ip", "203.0.113.9")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("10.1.1.5".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_ignores_x_real_ip_when_xff_has_no_client_hop() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "10.42.0.2, 10.42.0.3")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("10.42.0.7".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_uses_x_real_ip_only_when_xff_is_absent() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("10.1.1.5".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_ignores_forwarded_headers_from_untrusted_peer() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "10.1.1.5")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("203.0.113.9:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("203.0.113.9".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_uses_rightmost_hop_across_repeated_xff_headers() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "10.1.1.5")
+        .header("x-forwarded-for", "203.0.113.9")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("203.0.113.9".parse().unwrap())
+    );
+}
+
+#[test]
+fn client_ip_stops_at_unparseable_xff_hop() {
+    let proxies = parse_trusted_networks("10.42.0.0/16");
+    let req = Request::builder()
+        .uri("/api/me")
+        .header("x-forwarded-for", "10.1.1.5, not-an-ip")
+        .header("x-real-ip", "10.1.1.5")
+        .body(Body::empty())
+        .unwrap();
+    let connect = connect_info("10.42.0.7:443");
+
+    assert_eq!(
+        get_client_ip(&req, Some(&connect), &proxies),
+        Some("10.42.0.7".parse().unwrap())
+    );
+}
+
+#[tokio::test]
+async fn test_direct_trusted_network_peer_authenticates_without_xff() {
+    let db = Database::in_memory().unwrap();
+    let config = ServerConfig {
+        require_auth: true,
+        trusted_networks: parse_trusted_networks("10.1.1.0/24"),
+        ..Default::default()
+    };
+    let app = create_router(db, None, config);
+
+    let response = app
+        .oneshot(request_from_peer("/api/me", "10.1.1.5:54321"))
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = get_body_json(response).await;
+    assert_eq!(json["auth_method"], "trusted_network");
+    assert_eq!(json["user"], "10.1.1.5");
+}
+
 // ========== Cloudflare Access JWT Tests ==========
 // Locally minted RS256 tokens — no live Cloudflare credentials.
 
