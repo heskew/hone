@@ -11,6 +11,7 @@ Comprehensive list of implemented features.
 ## Core Features
 
 - Full database layer (schema defined inline, no migrations during development)
+- Opening a database fails when a live table is missing a column this binary reads; the error names that table and says to export and reset.
 - CSV import with auto-detection (web UI and CLI)
 - All seven detection algorithms (zombie, price increase, duplicate, auto-cancellation, resume, spending anomaly, tip discrepancy)
 - Subscription lifecycle monitoring (auto-detect cancelled, alert on resume)

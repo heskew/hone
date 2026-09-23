@@ -205,12 +205,12 @@ impl Database {
         Ok(())
     }
 
-    /// Run database migrations
-    fn run_migrations(&self) -> Result<()> {
-        let conn = self.conn()?;
-
-        conn.execute_batch(
-            r#"
+    /// Inline schema applied on open.
+    ///
+    /// Column names in these `CREATE TABLE` statements are what startup compares
+    /// to the live database. `CREATE TABLE IF NOT EXISTS` does not add a column
+    /// to a table that already exists.
+    const SCHEMA_SQL: &str = r#"
             -- Enable foreign keys
             PRAGMA foreign_keys = ON;
 
@@ -732,8 +732,25 @@ impl Database {
             CREATE INDEX IF NOT EXISTS idx_insights_status ON insight_findings(status, last_detected_at);
             CREATE INDEX IF NOT EXISTS idx_insights_type ON insight_findings(insight_type);
             CREATE INDEX IF NOT EXISTS idx_insights_severity ON insight_findings(severity);
-            "#,
-        )?;
+            "#;
+
+    /// Apply the inline schema.
+    ///
+    /// `CREATE TABLE IF NOT EXISTS` creates missing tables and does not add
+    /// columns to tables that already exist. A live table missing a column
+    /// this binary reads fails here, naming that table, and says to export
+    /// and reset. Old rows are not migrated.
+    fn run_migrations(&self) -> Result<()> {
+        let conn = self.conn()?;
+
+        // Indexes in the schema reference columns. Check first so a missing
+        // column stops here instead of surfacing as a later SQL error.
+        ensure_existing_tables_have_required_columns(&conn, Self::SCHEMA_SQL)?;
+
+        conn.execute_batch(Self::SCHEMA_SQL)?;
+
+        // Tables that did not exist yet were created above.
+        ensure_existing_tables_have_required_columns(&conn, Self::SCHEMA_SQL)?;
 
         // Privacy: drop leftover prompt/txn text from older metrics rows.
         // CREATE TABLE IF NOT EXISTS cannot rewrite existing columns/rows.
@@ -799,6 +816,261 @@ impl Database {
         info!("Database schema initialized");
         Ok(())
     }
+}
+
+/// Columns declared by the inline `CREATE TABLE` statements.
+///
+/// Parsed at startup and compared to live tables. This is a check only:
+/// missing columns are not added and old rows are not rewritten.
+fn columns_required_by_schema(sql: &str) -> Result<Vec<(String, Vec<String>)>> {
+    let stripped = strip_sql_line_comments(sql);
+    let marker = "CREATE TABLE IF NOT EXISTS ";
+    let mut tables = Vec::new();
+    let mut search_from = 0;
+    while let Some(rel) = stripped[search_from..].find(marker) {
+        let header = search_from + rel + marker.len();
+        let after = &stripped[header..];
+        let name_len = after
+            .find(|c: char| c.is_whitespace() || c == '(')
+            .ok_or_else(|| {
+                Error::InvalidData(
+                    "schema check could not read a table name from the embedded schema".into(),
+                )
+            })?;
+        let name = after[..name_len].trim();
+        if !is_sqlite_ident(name) {
+            return Err(Error::InvalidData(format!(
+                "schema check could not read table name {name} from the embedded schema"
+            )));
+        }
+        let paren_rel = after.find('(').ok_or_else(|| {
+            Error::InvalidData(format!(
+                "schema check could not read CREATE TABLE {name} from the embedded schema"
+            ))
+        })?;
+        let open = header + paren_rel;
+        let body = table_body(&stripped, open)?;
+        let mut cols = Vec::new();
+        for part in split_top_level_commas(body)? {
+            if let Some(col) = column_name_from_def(part)? {
+                cols.push(col);
+            }
+        }
+        if cols.is_empty() {
+            return Err(Error::InvalidData(format!(
+                "schema check found no columns for table {name} in the embedded schema"
+            )));
+        }
+        tables.push((name.to_string(), cols));
+        search_from = open + 1;
+    }
+    if tables.is_empty() {
+        return Err(Error::InvalidData(
+            "schema check found no tables in the embedded schema".into(),
+        ));
+    }
+    Ok(tables)
+}
+
+/// Skip tables that do not exist yet so `CREATE TABLE IF NOT EXISTS` can
+/// create them. A table that exists without a required column fails closed.
+fn ensure_existing_tables_have_required_columns(
+    conn: &rusqlite::Connection,
+    schema_sql: &str,
+) -> Result<()> {
+    for (table, columns) in columns_required_by_schema(schema_sql)? {
+        if !table_exists(conn, &table)? {
+            continue;
+        }
+        let live = live_column_names(conn, &table)?;
+        for column in columns {
+            let present = live.iter().any(|name| name.eq_ignore_ascii_case(&column));
+            if !present {
+                return Err(Error::SchemaMismatch(format!(
+                    "table {table} is missing column {column} that this binary reads. Export your data and reset the database."
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn table_exists(conn: &rusqlite::Connection, table: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?1)",
+        [table],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+fn live_column_names(conn: &rusqlite::Connection, table: &str) -> Result<Vec<String>> {
+    if !is_sqlite_ident(table) {
+        return Err(Error::InvalidData(format!(
+            "schema check refused table name {table}"
+        )));
+    }
+    let mut stmt = conn.prepare("SELECT name FROM pragma_table_info(?1)")?;
+    let rows = stmt.query_map([table], |row| row.get(0))?;
+    let mut names = Vec::new();
+    for name in rows {
+        names.push(name?);
+    }
+    Ok(names)
+}
+
+fn table_body(sql: &str, open_paren: usize) -> Result<&str> {
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut chars = sql[open_paren..].char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if in_string {
+            if c == '\'' {
+                if chars.peek().map(|(_, next)| *next) == Some('\'') {
+                    chars.next();
+                } else {
+                    in_string = false;
+                }
+            }
+            continue;
+        }
+        match c {
+            '\'' => in_string = true,
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Ok(&sql[open_paren + 1..open_paren + i]);
+                }
+            }
+            _ => {}
+        }
+    }
+    Err(Error::InvalidData(
+        "schema check could not find the end of a CREATE TABLE in the embedded schema".into(),
+    ))
+}
+
+fn split_top_level_commas(body: &str) -> Result<Vec<&str>> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut depth = 0i32;
+    let mut in_string = false;
+    let mut chars = body.char_indices().peekable();
+    while let Some((i, c)) = chars.next() {
+        if in_string {
+            if c == '\'' {
+                if chars.peek().map(|(_, next)| *next) == Some('\'') {
+                    chars.next();
+                } else {
+                    in_string = false;
+                }
+            }
+            continue;
+        }
+        match c {
+            '\'' => in_string = true,
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(Error::InvalidData(
+                        "schema check found unbalanced parentheses in a CREATE TABLE".into(),
+                    ));
+                }
+            }
+            ',' if depth == 0 => {
+                parts.push(&body[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    if in_string || depth != 0 {
+        return Err(Error::InvalidData(
+            "schema check could not parse a CREATE TABLE in the embedded schema".into(),
+        ));
+    }
+    parts.push(&body[start..]);
+    Ok(parts)
+}
+
+fn column_name_from_def(def: &str) -> Result<Option<String>> {
+    let def = def.trim();
+    if def.is_empty() {
+        return Ok(None);
+    }
+    let first = def.split_whitespace().next().unwrap_or(def);
+    if is_table_constraint(first) {
+        return Ok(None);
+    }
+    let name = first.trim_matches(|c| c == '"' || c == '`' || c == '[' || c == ']');
+    if is_sqlite_ident(name) {
+        Ok(Some(name.to_string()))
+    } else {
+        Err(Error::InvalidData(format!(
+            "schema check could not read a column name from `{def}`"
+        )))
+    }
+}
+
+fn is_table_constraint(token: &str) -> bool {
+    let upper = token.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "PRIMARY" | "UNIQUE" | "FOREIGN" | "CONSTRAINT" | "CHECK"
+    ) || upper.starts_with("UNIQUE(")
+        || upper.starts_with("PRIMARY(")
+        || upper.starts_with("FOREIGN(")
+        || upper.starts_with("CHECK(")
+        || upper.starts_with("CONSTRAINT(")
+}
+
+fn is_sqlite_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+fn strip_sql_line_comments(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    let mut in_string = false;
+    while let Some(c) = chars.next() {
+        if in_string {
+            out.push(c);
+            if c == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    if let Some(escaped) = chars.next() {
+                        out.push(escaped);
+                    }
+                } else {
+                    in_string = false;
+                }
+            }
+            continue;
+        }
+        if c == '\'' {
+            in_string = true;
+            out.push(c);
+            continue;
+        }
+        if c == '-' && chars.peek() == Some(&'-') {
+            chars.next();
+            for skipped in chars.by_ref() {
+                if skipped == '\n' {
+                    out.push('\n');
+                    break;
+                }
+            }
+            continue;
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Audit log entry
