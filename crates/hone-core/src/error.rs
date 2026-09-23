@@ -10,6 +10,10 @@ pub enum Error {
     #[error("Database pool error: {0}")]
     Pool(#[from] r2d2::Error),
 
+    /// Live schema is missing a column this binary reads.
+    #[error("{0}")]
+    SchemaMismatch(String),
+
     #[error("Encryption error: {0}")]
     Encryption(String),
 

@@ -2426,6 +2426,93 @@ mod tests {
         assert!(!candidates.is_empty());
         assert!(candidates[0].score > 0.5);
     }
+
+    #[test]
+    fn missing_column_fails_closed_on_startup() {
+        let expected = super::super::columns_required_by_schema(Database::SCHEMA_SQL).unwrap();
+        assert_eq!(
+            expected.len(),
+            Database::SCHEMA_SQL
+                .matches("CREATE TABLE IF NOT EXISTS ")
+                .count(),
+            "startup check must cover every inline table"
+        );
+        let tx_cols = expected
+            .iter()
+            .find(|(table, _)| table == "transactions")
+            .expect("transactions is in the inline schema");
+        assert!(
+            tx_cols.1.iter().any(|column| column == "card_member"),
+            "startup check must require transactions.card_member"
+        );
+        let findings = expected
+            .iter()
+            .find(|(table, _)| table == "insight_findings")
+            .expect("insight_findings is in the inline schema");
+        assert!(
+            !findings.1.iter().any(|column| column == "attention"),
+            "SQL comments must not be read as columns"
+        );
+
+        let path = format!(
+            "/tmp/hone_test_missing_col_{}_{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let _ = std::fs::remove_file(&path);
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            let defs = tx_cols
+                .1
+                .iter()
+                .filter(|column| column.as_str() != "card_member")
+                .map(|column| format!("{column} TEXT"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            conn.execute_batch(&format!("CREATE TABLE transactions ({defs});"))
+                .unwrap();
+        }
+
+        let err = match Database::new_unencrypted(&path) {
+            Ok(_) => panic!("missing column must fail startup"),
+            Err(err) => err,
+        };
+        let msg = err.to_string();
+        assert!(
+            msg.contains("transactions"),
+            "error should name the table, got {msg}"
+        );
+        assert!(
+            msg.contains("card_member"),
+            "error should name the missing column, got {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("export"),
+            "error should say to export, got {msg}"
+        );
+        assert!(
+            msg.to_lowercase().contains("reset"),
+            "error should say to reset, got {msg}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn database_created_by_this_binary_opens() {
+        let db = Database::in_memory().unwrap();
+        let path = db.path().to_string();
+        drop(db);
+
+        let reopened = Database::new_unencrypted(&path).unwrap();
+        assert_eq!(reopened.path(), path);
+        drop(reopened);
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(format!("{path}-wal"));
+        let _ = std::fs::remove_file(format!("{path}-shm"));
+    }
 }
 
 /// Security-focused tests for input validation and injection prevention
