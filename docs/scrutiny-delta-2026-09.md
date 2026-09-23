@@ -150,7 +150,7 @@ File these as their own issues. Each one is a single change.
 - After the hostname string passes `is_local_ai_host`, a resolved address that is not loopback, RFC1918, or IPv6 unique-local is refused.
 - The existing public-host string tests still pass.
 
-### 5. db: fail open when the live schema is missing a column this binary reads
+### 5. db: fail closed when the live schema is missing a column this binary reads
 
 **Why:** D5. Pre-shipping "no migrations" is accurate, and a long-lived Pi database will not grow columns by itself.
 
