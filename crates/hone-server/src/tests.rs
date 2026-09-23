@@ -1142,6 +1142,60 @@ fn test_cf_jwt_rejects_missing_kid() {
     assert!(err.contains("missing key ID"), "{err}");
 }
 
+const MCP_EXTERNAL_RESOURCE: &str = "http://127.0.0.1:3001/mcp";
+
+fn mcp_external_config() -> McpOAuthConfig {
+    McpOAuthConfig {
+        resource: Some(MCP_EXTERNAL_RESOURCE.to_string()),
+        ..Default::default()
+    }
+}
+
+fn mint_external_mcp_jwt(kid: Option<&str>, alg: jsonwebtoken::Algorithm) -> String {
+    use jsonwebtoken::{encode, EncodingKey, Header};
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock")
+        .as_secs();
+    let claims = serde_json::json!({
+        "aud": MCP_EXTERNAL_RESOURCE,
+        "exp": now + 3600,
+        "iat": now,
+        "scope": mcp::MCP_READ_SCOPE,
+    });
+    let mut header = Header::new(alg);
+    header.kid = kid.map(str::to_string);
+    let key = EncodingKey::from_rsa_pem(TEST_JWT_PRIVATE_PEM.as_bytes())
+        .expect("test private key should parse");
+    encode(&header, &claims, &key).expect("test token should encode")
+}
+
+#[test]
+fn mcp_rs256_with_kid_is_accepted() {
+    let token = mint_external_mcp_jwt(Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS256);
+    mcp::oauth::validate_mcp_rs256_with_keys(&token, &mcp_external_config(), &[test_cf_jwk()])
+        .expect("RS256 token with kid should be accepted");
+}
+
+#[test]
+fn mcp_rs256_rejects_missing_kid() {
+    let token = mint_external_mcp_jwt(None, jsonwebtoken::Algorithm::RS256);
+    let err =
+        mcp::oauth::validate_mcp_rs256_with_keys(&token, &mcp_external_config(), &[test_cf_jwk()])
+            .expect_err("token without kid should be rejected");
+    assert!(err.contains("missing key ID"), "{err}");
+}
+
+#[test]
+fn mcp_rs256_rejects_non_rs256_header_alg() {
+    // RS384 verifies with this RSA key if validation follows header.alg.
+    let token = mint_external_mcp_jwt(Some(TEST_JWT_KID), jsonwebtoken::Algorithm::RS384);
+    let err =
+        mcp::oauth::validate_mcp_rs256_with_keys(&token, &mcp_external_config(), &[test_cf_jwk()])
+            .expect_err("non-RS256 alg should be rejected against an RSA JWKS");
+    assert!(err.contains("MCP JWT validation failed"), "{err}");
+}
+
 fn jwt_gate_config() -> ServerConfig {
     ServerConfig {
         require_auth: true,

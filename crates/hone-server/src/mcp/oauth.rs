@@ -250,18 +250,18 @@ pub fn validate_mcp_rs256_with_keys(
 
     let header =
         jsonwebtoken::decode_header(token).map_err(|e| format!("Invalid JWT header: {e}"))?;
-    let decoding_key = if let Some(kid) = header.kid.as_deref() {
-        let jwk = keys
-            .iter()
-            .find(|k| k.common.key_id.as_deref() == Some(kid))
-            .ok_or_else(|| format!("No matching key for kid: {kid}"))?;
-        jsonwebtoken::DecodingKey::from_jwk(jwk).map_err(|e| format!("Invalid JWK: {e}"))?
-    } else {
-        let jwk = keys.first().ok_or("JWKS is empty")?;
-        jsonwebtoken::DecodingKey::from_jwk(jwk).map_err(|e| format!("Invalid JWK: {e}"))?
-    };
+    // The token must name its key. Falling back to keys[0] accepts a JWT that never did.
+    let kid = header.kid.as_deref().ok_or("JWT missing key ID (kid)")?;
+    let jwk = keys
+        .iter()
+        .find(|k| k.common.key_id.as_deref() == Some(kid))
+        .ok_or_else(|| format!("No matching key for kid: {kid}"))?;
+    let decoding_key =
+        jsonwebtoken::DecodingKey::from_jwk(jwk).map_err(|e| format!("Invalid JWK: {e}"))?;
 
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    // Pin RS256. `header.alg` is attacker-controlled; an `oct` key added to this
+    // JWKS later must not become selectable by the token.
+    let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256);
     validation.set_required_spec_claims(&["exp", "aud"]);
     validation.set_audience(&[resource]);
     validation.validate_exp = true;
