@@ -1,28 +1,34 @@
 # Release Dockerfile - packages pre-built binaries
 # Used by CI/CD after cross-compilation
 #
-# Base image: Google Distroless (cc-debian13)
-# Distroless provides a minimal, secure execution environment with no shell, 
-# package manager, or standard utilities. It runs as nonroot by default.
+# Base image: Google Distroless (cc-debian13:nonroot)
+# Distroless provides a minimal, secure execution environment with no shell,
+# package manager, or standard utilities. The nonroot tag runs as uid 65532.
 #
 # Alternatives:
 #   FROM debian:trixie-slim      (Standard Debian, includes shell for debugging)
 #   FROM dhi.io/debian-base      (Hardened Debian, includes shell)
 
-FROM gcr.io/distroless/cc-debian13
+# Empty /data for the database. The runtime image has no shell, so the
+# directory is created here and copied in. uid 65532 can write it.
+FROM debian:trixie-slim AS data-dir
+RUN mkdir -p /data && chown 65532:65532 /data && chmod 755 /data
+
+FROM gcr.io/distroless/cc-debian13:nonroot
 WORKDIR /app
 
 # Lets the server warn when asked to bind loopback, which is unreachable
 # through the container port mapping
 ENV HONE_IN_CONTAINER=1
 
-# Copy the correct binary based on target platform
-# Binary must already be executable (set in CI)
+# Copy the correct binary based on target platform.
+# Owned by uid 65532, mode 0755, so that user can execute the binary and read the UI.
 ARG TARGETARCH
-COPY binaries/${TARGETARCH}/hone /app/hone
+COPY --chown=65532:65532 --chmod=755 binaries/${TARGETARCH}/hone /app/hone
 
 # Copy frontend assets
-COPY ui/dist /app/ui/dist
+COPY --chown=65532:65532 --chmod=755 ui/dist /app/ui/dist
+COPY --from=data-dir --chown=65532:65532 --chmod=755 /data /data
 
 EXPOSE 3000
 ENTRYPOINT ["/app/hone"]
