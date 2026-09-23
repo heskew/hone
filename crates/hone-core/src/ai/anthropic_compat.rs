@@ -256,7 +256,7 @@ impl AnthropicCompatBackend {
     /// Create a new Anthropic-compatible backend
     pub fn new(base_url: &str, model: &str) -> Self {
         Self {
-            http_client: Client::new(),
+            http_client: super::host::ai_http_client(),
             base_url: base_url.trim_end_matches('/').to_string(),
             model: model.to_string(),
         }
