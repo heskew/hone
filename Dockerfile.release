@@ -9,6 +9,11 @@
 #   FROM debian:trixie-slim      (Standard Debian, includes shell for debugging)
 #   FROM dhi.io/debian-base      (Hardened Debian, includes shell)
 
+# Empty /data for the database. The runtime image has no shell, so the
+# directory is created here and copied in. uid 65532 can write it.
+FROM debian:trixie-slim AS data-dir
+RUN mkdir -p /data && chown 65532:65532 /data && chmod 755 /data
+
 FROM gcr.io/distroless/cc-debian13:nonroot
 WORKDIR /app
 
@@ -23,6 +28,7 @@ COPY --chown=65532:65532 --chmod=755 binaries/${TARGETARCH}/hone /app/hone
 
 # Copy frontend assets
 COPY --chown=65532:65532 --chmod=755 ui/dist /app/ui/dist
+COPY --from=data-dir --chown=65532:65532 --chmod=755 /data /data
 
 EXPOSE 3000
 ENTRYPOINT ["/app/hone"]

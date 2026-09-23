@@ -27,7 +27,7 @@ HONE_DB_KEY=your-secure-passphrase
 
 ### 3. Deploy
 
-The image runs as uid 65532. The `hone-data` volume is mounted at `/data` and must be writable by that user so the server can create `/data/hone.db`. A named volume stays root-owned until you change it:
+The image runs as uid 65532. It includes an empty `/data` owned by that user, and the default command stores the database at `/data/hone.db`. A new named volume mounted at `/data` is initialized from that directory. A volume that already exists and is owned by root stays root-owned, and a host bind mount keeps the host directory's owner. uid 65532 must be able to write it:
 
 ```bash
 docker run --rm -v hone-data:/data alpine chown 65532:65532 /data
